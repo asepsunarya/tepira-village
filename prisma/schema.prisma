@@ -1,0 +1,220 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// SKEMA INI DISALIN APA ADANYA DARI REPO BACKEND `tepira` (prisma/schema.prisma).
+//
+// tepira-village memakai DATABASE yang SAMA dengan tepira. Repo ini TIDAK
+// memiliki migrasi sendiri: skema & migrasi tetap dimiliki oleh repo tepira.
+// Kalau tepira mengubah skema, salin ulang file ini lalu `npm run prisma:generate`.
+//
+// Untuk development lokal tanpa Supabase, `npm run db:push:dev` membuat tabel
+// yang sama di Postgres lokal (hanya untuk dev, jangan dipakai ke DB produksi).
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id            String        @id @default(cuid())
+  name          String?
+  email         String?       @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  goals         Goal[]
+  expenses      Expense[]
+  salaries      Salary[]
+  bonuses       Bonus[]
+  balances      Balance[]
+  wallets       Wallet[]
+  weeklyFinancialInsights WeeklyFinancialInsight[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Goal {
+  id            Int            @id @default(autoincrement())
+  title         String
+  description   String?
+  targetAmount  Int
+  deadline      DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  userId        String?
+  user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions Contribution[]
+
+  @@index([userId])
+}
+
+model Contribution {
+  id     Int      @id @default(autoincrement())
+  amount Int
+  note   String?
+  date   DateTime @default(now())
+  goal   Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  goalId Int
+}
+
+model Expense {
+  id        Int      @id @default(autoincrement())
+  amount    Int
+  category  String?
+  note      String?
+  source    String?  @default("gaji") // "gaji" or "bonus"
+  date      DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId  Int?
+  wallet    Wallet?  @relation(fields: [walletId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([walletId])
+}
+
+model Salary {
+  id                     Int                @id @default(autoincrement())
+  amount                 Int
+  month                  Int
+  year                   Int
+  totalExpenseAllocation Int
+  savingsAllocation      Int
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  allocations            BudgetAllocation[]
+  userId                 String?
+  user                   User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month, year])
+  @@index([userId])
+}
+
+model BudgetAllocation {
+  id        Int      @id @default(autoincrement())
+  category  String
+  amount    Int
+  salary    Salary   @relation(fields: [salaryId], references: [id], onDelete: Cascade)
+  salaryId  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Bonus {
+  id          Int               @id @default(autoincrement())
+  amount      Int
+  month       Int
+  year        Int
+  note        String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  allocations BonusAllocation[]
+  userId      String?
+  user        User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month, year])
+  @@index([userId])
+}
+
+model BonusAllocation {
+  id        Int      @id @default(autoincrement())
+  category  String
+  amount    Int
+  bonus     Bonus    @relation(fields: [bonusId], references: [id], onDelete: Cascade)
+  bonusId   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Balance {
+  id        Int      @id @default(autoincrement())
+  amount    Int
+  month     Int
+  year      Int
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month, year])
+  @@index([userId])
+}
+
+
+model Wallet {
+  id          Int      @id @default(autoincrement())
+  name        String
+  type        String   @default("bank") // bank, e-wallet, cash, investment, credit, paylater, other
+  balance     Int
+  description String?
+  isDebt      Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses    Expense[]
+
+  @@index([userId])
+  @@index([userId, sortOrder])
+}
+
+
+model WeeklyFinancialInsight {
+  id              Int      @id @default(autoincrement())
+  weekStart       DateTime
+  weekEnd         DateTime
+  month           Int
+  year            Int
+  healthScore     Int
+  status          String
+  summary         String   @db.Text
+  recommendations Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@index([userId, year, month])
+}

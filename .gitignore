@@ -1,0 +1,28 @@
+# Dependencies
+/node_modules
+
+# Next.js
+/.next/
+/out/
+
+# Local env files
+.env
+.env*.local
+.env.production
+
+# Misc
+.DS_Store
+*.pem
+npm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
+# IDE
+.vscode/
+.idea/
+
+# Dev screenshots / scratch
+/tmp/
