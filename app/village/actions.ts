@@ -8,6 +8,7 @@ import {
   deleteExpenseAndRestoreWallet,
   updateExpenseWithWallet
 } from "@/lib/wallet-expenses";
+import { KNOWN_CATEGORY_LABELS, expenseCategories } from "@/lib/categories";
 import type { ActionResult } from "@/lib/game";
 
 /**
@@ -246,6 +247,106 @@ export async function deleteWallet(walletId: number, period: Period): Promise<Ac
   return run(period, async (userId) => {
     if (!walletId) return;
     await prisma.wallet.deleteMany({ where: { id: walletId, ...userOwnedWhere(userId) } });
+  });
+}
+
+// ── Alokasi gaji ─────────────────────────────────────────────────────────────
+
+/** Nominal alokasi: bulat, 0 boleh (kategori tanpa jatah). */
+function allocationAmount(v: unknown, label: string) {
+  const n = Number(v ?? 0);
+  if (!Number.isInteger(n) || n < 0) throw new Error(`${label} harus angka bulat 0 atau lebih.`);
+  if (n > MAX_AMOUNT) throw new Error(`${label} terlalu besar (maksimal Rp2.147.483.647).`);
+  return n;
+}
+
+/**
+ * Sama seperti createSalaryBudget di tepira: total pengeluaran + tabungan harus
+ * pas dengan gaji, baris bulan ini di-update (klaim baris lama tanpa pemilik)
+ * atau dibuat baru, dan breakdown kategori diganti seluruhnya.
+ */
+export async function saveSalaryAllocation(
+  input: { amount: number; savingsAllocation: number; allocations: { category: string; amount: number }[] },
+  period: Period
+): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const { month, year } = normalizePeriod(period.month, period.year);
+    const amount = toInt(input.amount);
+    assertAmount(amount, "Gaji");
+    const savingsAllocation = allocationAmount(input.savingsAllocation, "Alokasi tabungan");
+
+    const list = Array.isArray(input.allocations) ? input.allocations : [];
+    if (list.length > 60) throw new Error("Kategori alokasi terlalu banyak.");
+    const byCategory = new Map<string, number>();
+    for (const a of list) {
+      const category = clean(a?.category);
+      if (!category) throw new Error("Nama kategori alokasi tidak boleh kosong.");
+      if (category.length > 120) throw new Error("Nama kategori alokasi terlalu panjang.");
+      if (byCategory.has(category)) throw new Error(`Kategori "${category}" muncul lebih dari sekali.`);
+      byCategory.set(category, allocationAmount(a?.amount, `Alokasi ${category}`));
+    }
+
+    // Sembilan kategori tepira selalu disimpan (nol pun, seperti /api/budget), lalu
+    // kategori lain/lama yang masih punya nominal supaya tidak hilang diam-diam.
+    const allocations = [
+      ...expenseCategories.map((c) => ({ category: c.label, amount: byCategory.get(c.label) ?? 0 })),
+      ...[...byCategory]
+        .filter(([category, value]) => !KNOWN_CATEGORY_LABELS.has(category) && value > 0)
+        .map(([category, value]) => ({ category, amount: value }))
+    ];
+    const totalExpenseAllocation = allocations.reduce((sum, a) => sum + a.amount, 0);
+    const totalAllocated = totalExpenseAllocation + savingsAllocation;
+    if (totalAllocated !== amount) {
+      throw new Error(
+        `Total alokasi (${totalAllocated.toLocaleString("id-ID")}) harus sama dengan gaji (${amount.toLocaleString("id-ID")})`
+      );
+    }
+
+    const existing = await prisma.salary.findFirst({
+      where: { month, year, ...userOwnedWhere(userId) },
+      // Utamakan baris milik user kalau ada juga baris lama tanpa pemilik (hindari bentrok unique).
+      orderBy: { userId: { sort: "asc", nulls: "last" } }
+    });
+    if (existing) {
+      await prisma.salary.update({
+        where: { id: existing.id },
+        data: {
+          amount,
+          totalExpenseAllocation,
+          savingsAllocation,
+          userId,
+          allocations: { deleteMany: {}, create: allocations }
+        }
+      });
+    } else {
+      await prisma.salary.create({
+        data: {
+          amount,
+          month,
+          year,
+          totalExpenseAllocation,
+          savingsAllocation,
+          userId,
+          allocations: { create: allocations }
+        }
+      });
+    }
+  });
+}
+
+/**
+ * Sama seperti deleteSalary di tepira: hapus satu baris berdasarkan id (baris yang sedang
+ * dilihat), bukan semua baris bulan itu. Bulan & tahun ikut dicek supaya id basi tidak
+ * menghapus bulan lain.
+ */
+export async function deleteSalaryAllocation(salaryId: number, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    if (!Number.isInteger(salaryId) || salaryId <= 0) throw new Error("Alokasi gaji tidak ditemukan.");
+    const { month, year } = normalizePeriod(period.month, period.year);
+    const { count } = await prisma.salary.deleteMany({
+      where: { id: salaryId, month, year, ...userOwnedWhere(userId) }
+    });
+    if (!count) throw new Error("Alokasi gaji ini sudah berubah atau terhapus. Muat ulang halaman dulu, ya.");
   });
 }
 

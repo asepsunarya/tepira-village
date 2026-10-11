@@ -50,6 +50,19 @@ export function todayInputValue() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/**
+ * Tanggal default untuk mencatat di bulan yang sedang dilihat: hari ini kalau bulan berjalan,
+ * tanggal terakhir untuk bulan lalu, tanggal 1 untuk bulan depan.
+ */
+export function defaultInputDateFor(month: number, year: number) {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (month === now.getMonth() + 1 && year === now.getFullYear()) return todayInputValue();
+  const past = year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1);
+  const day = past ? new Date(year, month, 0).getDate() : 1;
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
 /** ISO → nilai <input type="date"> dalam zona waktu lokal. */
 export function dateInputValue(iso: string) {
   const d = new Date(iso);

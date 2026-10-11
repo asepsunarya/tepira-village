@@ -252,19 +252,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .pin-card h2 { margin: 0; font-size: 18px; font-weight: 900; }
 .pin-card p { margin: 0; font-size: 13px; }
 
-/* ---------- landing / login ---------- */
-.landing { min-height: 100vh; display: grid; place-items: center; padding: 24px; background:
-  radial-gradient(circle at 15% 10%, #ffd3e4, transparent 40rem),
-  radial-gradient(circle at 85% 90%, #dcf5ec, transparent 36rem),
-  #cfe9f7; overflow: auto; }
-.landing-card { width: min(620px, 100%); padding: 32px; display: flex; flex-direction: column; gap: 16px; }
-.landing-card.narrow { width: min(440px, 100%); }
-.landing h1 { margin: 8px 0 0; font-size: 32px; line-height: 1.15; font-weight: 900; letter-spacing: -0.02em; }
-.landing h1 em { color: #c2457d; font-style: normal; }
-.landing p { margin: 0; font-size: 15px; line-height: 1.6; font-weight: 700; color: var(--ink-soft); }
-.landing-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-weight: 800; font-size: 14px; }
-.landing-list li { background: #fff; border-radius: 12px; padding: 10px 12px; border: 2px solid #f6ebf0; }
-.landing-cta { display: block; font-size: 15px; }
+/* ---------- login (sisanya di app/landing.css) ---------- */
 .google-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; border: 2px solid #f1e4ea; border-radius: 14px; padding: 12px; font-weight: 900; font-size: 14px; box-shadow: 0 6px 16px rgba(120, 60, 100, 0.12); transition: transform 0.15s; }
 .google-btn:hover { transform: translateY(-1px); }
 .google-btn .g { width: 26px; height: 26px; border-radius: 50%; border: 2px solid #eee; display: grid; place-items: center; color: #4285f4; font-weight: 900; }
@@ -285,4 +273,200 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
   .dock-btn { width: 50px; height: 56px; }
   .dock-btn span { font-size: 20px; }
   .dock-btn small { font-size: 9px; }
+}
+
+/* ---------- alokasi gaji ---------- */
+.amount-input.compact { padding: 6px 8px; gap: 4px; font-size: 12px; }
+.amount-input.compact input { font-size: 14px; min-width: 0; }
+.salary-open { align-self: flex-start; }
+.cat-hint { margin: -6px 2px 0; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.cat-hint.ok b { color: #1f8a63; }
+.cat-hint.warn { color: #a87a12; }
+.cat-hint.over { color: #c23b3b; }
+
+.split-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: #f3e8ee; }
+.split-bar > div { height: 100%; transition: width 0.5s ease; }
+.split-bar > div + div { box-shadow: inset 2px 0 0 #fff; }
+.salary-totals > div:first-child { grid-column: 1 / -1; }
+.salary-totals > div:first-child b { font-size: 18px; }
+.salary-split { display: flex; flex-direction: column; gap: 8px; background: #fff; border-radius: 14px; padding: 10px; border: 2px solid #f6ebf0; }
+.split-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; font-weight: 800; color: var(--ink-soft); }
+.split-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.split-legend b { color: var(--ink); }
+.split-legend i, .alloc-group-head i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex-shrink: 0; }
+
+.salary-cats .cat-head { flex-wrap: wrap; gap: 2px 8px; }
+.salary-cats .cat-head > span { min-width: 0; overflow-wrap: anywhere; }
+.salary-cats .cat-head b { white-space: nowrap; }
+.salary-cats .cat-row.over { border-color: #ffd0d0; }
+.salary-cats .cat-row.total { border-color: #e3dcf5; }
+.cat-sub { font-size: 11px; font-weight: 800; }
+
+.alloc-group { display: flex; flex-direction: column; gap: 6px; background: #fff; border-radius: 14px; padding: 10px; border: 2px solid #f6ebf0; }
+.alloc-group.savings { border-color: #cdeee3; }
+.alloc-group-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 900; color: var(--ink); text-transform: uppercase; letter-spacing: 0.03em; }
+.alloc-group-head .alloc-pct { margin-left: auto; }
+.alloc-group .pill { align-self: flex-start; }
+.add-form label.alloc-row { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--ink); font-size: 13px; }
+.alloc-name { flex: 1 1 110px; min-width: 0; overflow-wrap: anywhere; }
+.alloc-pct { background: #f6f1fb; color: #7a68a8; font-size: 10px; font-weight: 900; padding: 2px 7px; border-radius: 999px; white-space: nowrap; letter-spacing: 0; }
+.alloc-row .amount-input { flex: 0 1 140px; min-width: 116px; }
+
+.alloc-footer { position: sticky; bottom: 0; z-index: 1; display: flex; flex-direction: column; gap: 6px; background: #fffaf7; border-radius: 16px; padding: 10px 12px; border: 2px solid #f1e4ea; box-shadow: 0 -8px 18px rgba(120, 60, 100, 0.12); }
+.alloc-footer.ok { border-color: #a9e2cf; }
+.alloc-footer.left { border-color: #f3dc9a; }
+.alloc-footer.over { border-color: #ffc9c9; }
+.alloc-footer-head { font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.alloc-footer-head b { color: var(--ink); }
+.alloc-status { margin: 0; font-size: 13px; font-weight: 900; }
+.alloc-footer.ok .alloc-status { color: #1f8a63; }
+.alloc-footer.left .alloc-status { color: #a87a12; }
+.alloc-footer.over .alloc-status { color: #c23b3b; }
+.alloc-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.alloc-actions .primary { flex: 1 1 160px; }
+.amount-input.locked { color: var(--ink-soft); background: #f7f1f4; }
+.amount-input.locked input { cursor: not-allowed; letter-spacing: 0.08em; }
+.amount-reveal { padding: 0; margin-top: -2px; }
+
+@media (max-height: 640px) {
+  /* layar pendek: footer alokasi jadi satu baris supaya input gaji & tombol cepat tetap kelihatan */
+  .alloc-footer { flex-direction: row; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 12px; }
+  .alloc-footer-head, .alloc-footer .split-bar { display: none; }
+  .alloc-status { flex: 1 1 auto; min-width: 0; font-size: 12px; line-height: 1.3; }
+  .alloc-actions { flex: 0 0 auto; flex-wrap: nowrap; gap: 6px; }
+  .alloc-actions .primary { flex: 0 0 auto; padding: 8px 12px; }
+  .alloc-actions .pill { padding: 6px 10px; }
+  .alloc-save-word { display: none; }
+}
+
+@media (max-width: 640px) {
+  /* 7 tombol dock: menyusut supaya muat di layar 360px */
+  .dock { width: max-content; max-width: calc(100vw - 16px); gap: 2px; padding: 6px; }
+  .dock-btn { flex: 0 1 50px; width: 50px; min-width: 0; padding: 0; }
+  .dock-btn small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+
+/* ---------- tutorial ---------- */
+.hud-brand .tour-replay { margin-left: auto; }
+.hud-brand .tour-replay + .pill { margin-left: 0; }
+.app.tour-on .hud-error { z-index: 33; }
+
+/* Lapisan sorotan: tidak menangkap klik, jadi sasaran & seluruh desa tetap bisa dipakai. */
+.tour-layer { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+.tour-hole {
+  position: absolute; border-radius: 18px; pointer-events: none;
+  box-shadow: 0 0 0 3px rgba(255, 189, 216, 0.95), 0 0 0 200vmax rgba(52, 36, 62, var(--tour-dim, 0.38));
+  transition: left 0.35s ease, top 0.35s ease, width 0.35s ease, height 0.35s ease, box-shadow 0.35s ease;
+}
+.tour-hole.none { box-shadow: 0 0 0 0 rgba(255, 189, 216, 0), 0 0 0 200vmax rgba(52, 36, 62, var(--tour-dim, 0.38)); }
+.tour-hole::after { content: ""; position: absolute; inset: -5px; border-radius: 22px; border: 3px solid var(--pink); animation: tourPulse 1.6s ease-out infinite; }
+.tour-hole.none::after { display: none; }
+@keyframes tourPulse { 0% { opacity: 0.9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.06); } }
+
+.tour-card { position: absolute; z-index: 31; pointer-events: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: rgba(255, 250, 247, 0.97); outline: none; transition: left 0.3s ease, top 0.3s ease; animation: popIn 0.2s ease-out; }
+.tour-card:focus-visible { box-shadow: var(--shadow), 0 0 0 3px #ffbdd8; }
+.tour-card.center { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; padding: 18px 20px 16px; gap: 10px; animation: tourPopCenter 0.25s ease-out; }
+/* Banner (HP, atau layar sempit dengan panel terbuka): selalu ringkas supaya panel di bawahnya tetap lega. */
+.tour-card.banner { left: 8px; right: 8px; top: 8px; padding: 8px 12px; gap: 5px; }
+.tour-card.banner.bottom { top: auto; }
+.tour-card.banner h2 { font-size: 14px; }
+.tour-card.banner .tour-body { font-size: 12px; line-height: 1.4; }
+/* status + tombol satu baris */
+.tour-card.banner .tour-bottom { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.tour-card.banner .tour-goal { padding: 0; border: 0; background: none; flex: 0 0 auto; }
+.tour-card.banner .tour-goal > span { display: none; }
+.tour-card.banner .tour-foot { flex: 1 1 auto; }
+.tour-card.banner .tour-foot .primary { padding: 7px 14px; }
+.tour-card.banner .tour-dots { display: none; }
+@keyframes tourPopCenter { from { transform: translate(-50%, -50%) scale(0.92); opacity: 0; } to { transform: translate(-50%, -50%); opacity: 1; } }
+
+.tour-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.tour-count { font-size: 11px; font-weight: 900; color: #c2457d; background: var(--pink-soft); padding: 2px 8px; border-radius: 999px; }
+.tour-dots { display: flex; gap: 4px; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: #f1e4ea; transition: background 0.2s; }
+.tour-dots i.on { background: var(--pink); }
+.tour-close { margin-left: auto; font-size: 11px; font-weight: 800; color: var(--ink-soft); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.tour-close:hover { background: #fff; color: #c2457d; }
+.tour-hero { font-size: 34px; letter-spacing: 4px; text-align: center; }
+.tour-card h2 { margin: 0; font-size: 16px; font-weight: 900; line-height: 1.25; }
+.tour-card.center h2 { font-size: 19px; text-align: center; }
+.tour-body { font-size: 13px; line-height: 1.5; font-weight: 700; color: var(--ink); }
+.tour-body p { margin: 8px 0 0; color: var(--ink-soft); }
+/* layar pendek: teks dipotong, dibuka lewat tombol "Detail" (Tutorial.tsx) */
+.tour-body.clamp { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tour-more { padding: 0; margin-top: -3px; }
+/* pengumuman langkah untuk pembaca layar */
+.tour-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tour-points, .tour-recap { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.tour-points li, .tour-recap li { display: flex; gap: 8px; align-items: center; background: #fff; border-radius: 12px; padding: 8px 10px; border: 2px solid #f6ebf0; }
+.tour-points li > span { font-size: 18px; flex-shrink: 0; }
+.tour-recap li.ok { border-color: #cdeee3; }
+.tour-recap-label { flex: 1; min-width: 0; }
+.tour-recap b { font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.tour-recap li.ok b { color: #1f8a63; }
+.tour-tries { display: flex; gap: 6px; flex-wrap: wrap; }
+.tour-tries .pill:hover { transform: none; }
+
+.tour-goal { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: #fff; border: 2px solid #f6ebf0; border-radius: 12px; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+.tour-goal > span { flex: 1 1 160px; min-width: 0; }
+.tour-optional { margin-left: 6px; font-size: 10px; font-weight: 900; color: #7a68a8; background: #f6f1fb; padding: 1px 7px; border-radius: 999px; }
+.tour-state { margin-left: auto; white-space: nowrap; font-size: 12px; }
+.tour-goal.waiting .tour-state { color: #a87a12; }
+.tour-goal.already { border-color: #cdeee3; }
+.tour-goal.already .tour-state, .tour-goal.done .tour-state { color: #1f8a63; }
+.tour-goal.done { border-color: #a9e2cf; background: var(--mint-soft); }
+.tour-note { margin: 0; font-size: 12px; font-weight: 800; color: #5a67c9; background: #eef1ff; border-radius: 10px; padding: 6px 10px; }
+.tour-note .link-btn { padding: 0; }
+.tour-error { margin: 0; font-size: 12px; font-weight: 800; color: #c23b3b; background: #ffecf0; border-radius: 10px; padding: 6px 10px; }
+.tour-bottom { display: flex; flex-direction: column; gap: 8px; }
+.tour-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.tour-foot > :first-child:not(:only-child) { margin-right: auto; }
+.tour-foot .primary { padding: 8px 16px; }
+.tour-foot .link-btn { align-self: center; }
+.tour-card.center .tour-foot { justify-content: center; }
+.tour-card.center .tour-foot > :first-child:not(:only-child) { margin-right: 0; }
+
+.tour-card.celebrate { animation: tourCheer 0.5s ease-out; }
+.tour-card.center.celebrate { animation: tourPopCenter 0.25s ease-out; }
+@keyframes tourCheer { 0% { transform: scale(1); } 40% { transform: scale(1.04); } 100% { transform: scale(1); } }
+.tour-burst { position: absolute; right: 14px; top: -18px; font-size: 26px; pointer-events: none; animation: floatUp 1.6s ease-out forwards; }
+
+.tour-arrow { position: absolute; width: 14px; height: 14px; background: #fffaf7; border-radius: 3px; transform: rotate(45deg); pointer-events: none; }
+.tour-arrow.top { top: -7px; margin-left: -7px; }
+.tour-arrow.bottom { bottom: -7px; margin-left: -7px; }
+.tour-arrow.left { left: -7px; margin-top: -7px; }
+.tour-arrow.right { right: -7px; margin-top: -7px; }
+
+/* Banner panduan di atas: panel & pesan HUD didorong ke bawahnya (lihat Tutorial.tsx). */
+:root[data-tour-banner="top"] .panel { top: calc(var(--tour-banner-h, 120px) + 16px); }
+:root[data-tour-banner="top"] .hud-error { top: calc(var(--tour-banner-h, 120px) + 16px); }
+
+@media (max-width: 640px) {
+  .tour-card.center { padding: 16px; }
+  .tour-hero { font-size: 28px; }
+}
+
+@media (max-height: 640px) {
+  /* layar pendek: kartu panduan dirapatkan supaya form di panel tetap bisa dipakai */
+  .tour-card.float, .tour-card.banner { padding: 7px 10px; gap: 4px; }
+  .tour-card.banner { left: 6px; right: 6px; top: 6px; }
+  .tour-card.float h2 { font-size: 14px; }
+  .tour-card.float .tour-body { font-size: 12px; line-height: 1.4; }
+  .tour-card.float .tour-head, .tour-card.banner .tour-head { min-height: 18px; }
+  .tour-card.float .tour-dots { display: none; }
+  .tour-card.float .tour-bottom { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .tour-card.float .tour-goal { flex: 1 1 auto; padding: 3px 8px; gap: 2px 6px; }
+  .tour-card.float .tour-goal > span { flex-basis: 100px; }
+  .tour-card.float .tour-foot { flex: 1 1 auto; gap: 6px; }
+  .tour-card.float .tour-foot .primary, .tour-card.banner .tour-foot .primary { padding: 6px 12px; }
+  .tour-card.center { padding: 14px 16px 12px; gap: 8px; }
+  .tour-hero { font-size: 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-hole, .tour-card { transition: none; }
+  .tour-hole::after, .tour-burst { animation: none; }
+  .tour-burst { display: none; }
+  .tour-card, .tour-card.celebrate { animation: none; }
+  .tour-card.center, .tour-card.center.celebrate { animation: none; }
 }

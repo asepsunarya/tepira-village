@@ -15,7 +15,8 @@ export const authConfig = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET
     })
   ],
-  pages: { signIn: "/login" },
+  // Error lain (mis. Configuration, AdapterError) juga ke halaman login, bukan halaman bawaan Auth.js.
+  pages: { signIn: "/login", error: "/login" },
   session: { strategy: "jwt" },
   callbacks: {
     authorized({ auth, request }) {

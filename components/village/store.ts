@@ -5,8 +5,19 @@ import { persist } from "zustand/middleware";
 import type { ActionResult, Snapshot } from "@/lib/game";
 import * as actions from "@/app/village/actions";
 import type { Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
-import { WARUNG, goalPlot } from "./layout";
+import { HALL, WARUNG, goalPlot } from "./layout";
 import { formatCompact } from "@/lib/format";
+import {
+  NO_HITS,
+  captureBaseline,
+  clampTourStep,
+  readTour,
+  tourOwner,
+  writeTour,
+  type TourBaseline,
+  type TourHits,
+  type TourStatus
+} from "./tutorial/progress";
 
 /** Preferensi visual saja; tersimpan di browser. Data uang selalu dari server. */
 export interface UiSettings {
@@ -15,6 +26,19 @@ export interface UiSettings {
   hideMoney: boolean;
   freeze: boolean;
 }
+
+/** Tur desa (coach mark) untuk pengguna baru. Progres per user di localStorage, bukan di DB. */
+export interface TourState {
+  /** email pemilik progres; null = belum diinisialisasi */
+  owner: string | null;
+  active: boolean;
+  step: number;
+  /** halaman di dalam langkah info bertahap */
+  page: number;
+  baseline: TourBaseline | null;
+}
+
+const IDLE_TOUR: TourState = { owner: null, active: false, step: 0, page: 0, baseline: null };
 
 interface State {
   snapshot: Snapshot | null;
@@ -56,6 +80,24 @@ interface State {
   createWallet: (input: Parameters<typeof actions.createWallet>[0]) => Promise<boolean>;
   updateWallet: (id: number, input: Parameters<typeof actions.updateWallet>[1]) => Promise<boolean>;
   deleteWallet: (id: number) => Promise<void>;
+  saveSalary: (input: Parameters<typeof actions.saveSalaryAllocation>[0]) => Promise<boolean>;
+  /** Hapus baris alokasi yang sedang dilihat (id dari snapshot.salary). */
+  deleteSalary: (salaryId: number) => Promise<void>;
+
+  tour: TourState;
+  /** Setoran & pengeluaran yang berhasil sejak halaman dibuka (untuk tur). */
+  tourHits: TourHits;
+  /**
+   * Sekali per user: lanjutkan tur yang belum selesai, atau mulai otomatis kalau server
+   * menilai akun ini baru (lihat isNewVillager di lib/snapshot.ts).
+   */
+  initTour: (isNew: boolean) => void;
+  /** Mulai/lompat ke langkah tertentu (baseline diambil ulang). */
+  startTour: (step?: number) => void;
+  setTourPage: (page: number) => void;
+  /** Ambil ulang baseline, mis. setelah pindah bulan. */
+  rebaseTour: () => void;
+  endTour: (status: Exclude<TourStatus, "active">) => void;
 }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -120,6 +162,8 @@ export const useVillage = create<State>()(
         villagerTarget: null,
         viewNonce: 0,
         celebrateGoalId: null,
+        tour: IDLE_TOUR,
+        tourHits: NO_HITS,
 
         hydrate: (snapshot) => {
           const unlockedBefore =
@@ -188,6 +232,7 @@ export const useVillage = create<State>()(
           const before = get().snapshot?.goals.find((g) => g.id === input.goalId);
           const ok = await mutate(() => actions.addContribution(input, period()));
           if (ok) {
+            set((s) => ({ tourHits: { ...s.tourHits, save: s.tourHits.save + 1, saveGoalId: input.goalId } }));
             const snap = get().snapshot!;
             const idx = snap.goals.findIndex((g) => g.id === input.goalId);
             const after = snap.goals[idx];
@@ -224,6 +269,7 @@ export const useVillage = create<State>()(
         spend: async (input) => {
           const ok = await mutate(() => actions.addExpense(input, period()));
           if (ok) {
+            set((s) => ({ tourHits: { ...s.tourHits, spend: s.tourHits.spend + 1 } }));
             walkTo(WARUNG.x - 1.2, WARUNG.z + 3.4, "spend");
             pushToast({
               x: WARUNG.x,
@@ -251,6 +297,70 @@ export const useVillage = create<State>()(
         deleteWallet: async (id) => {
           const ok = await mutate(() => actions.deleteWallet(id, period()));
           if (ok) set({ selectedWalletId: null });
+        },
+        saveSalary: async (input) => {
+          const hadSalary = Boolean(get().snapshot?.salary);
+          const ok = await mutate(() => actions.saveSalaryAllocation(input, period()));
+          if (ok) {
+            // Si penabung lapor ke Balai Desa. Toast tanpa nominal: gaji lebih sensitif.
+            walkTo(HALL.x + 1.4, HALL.z + 3.4, "save");
+            pushToast({
+              x: HALL.x,
+              z: HALL.z,
+              y: 5.2,
+              text: hadSalary ? "💰 Alokasi diperbarui" : "💰 Gaji dibagi!",
+              sub: "Tiap rupiah sudah punya tugas",
+              tone: "info"
+            });
+            notify(hadSalary ? "Alokasi gaji diperbarui 💰" : "Gaji bulan ini sudah dialokasikan 💰");
+          }
+          return ok;
+        },
+        deleteSalary: async (salaryId) => {
+          const ok = await mutate(() => actions.deleteSalaryAllocation(salaryId, period()));
+          if (ok) notify("Alokasi gaji bulan ini dihapus.");
+        },
+
+        initTour: (isNew) => {
+          const s = get().snapshot;
+          if (!s) return;
+          const owner = tourOwner(s);
+          if (get().tour.owner === owner) return;
+          const stored = readTour(owner);
+          const hits = get().tourHits;
+          if (stored?.status === "active") {
+            set({ tour: { owner, active: true, step: stored.step, page: 0, baseline: captureBaseline(s, hits) } });
+          } else if (!stored && isNew) {
+            writeTour(owner, { status: "active", step: 0 });
+            set({ tour: { owner, active: true, step: 0, page: 0, baseline: captureBaseline(s, hits) } });
+          } else {
+            set({ tour: { ...IDLE_TOUR, owner } });
+          }
+        },
+        startTour: (step = 0) => {
+          const s = get().snapshot;
+          if (!s) return;
+          const owner = tourOwner(s);
+          const next = clampTourStep(step);
+          writeTour(owner, { status: "active", step: next });
+          set({ tour: { owner, active: true, step: next, page: 0, baseline: captureBaseline(s, get().tourHits) } });
+        },
+        setTourPage: (page) => set((st) => ({ tour: { ...st.tour, page: Math.max(0, page) } })),
+        rebaseTour: () => {
+          const s = get().snapshot;
+          if (!s) return;
+          set((st) => ({ tour: { ...st.tour, baseline: captureBaseline(s, st.tourHits, st.tour.baseline) } }));
+        },
+        endTour: (status) => {
+          const { tour, snapshot } = get();
+          if (!tour.active) return;
+          if (snapshot) writeTour(tour.owner ?? tourOwner(snapshot), { status, step: tour.step });
+          set({ tour: { ...tour, active: false, page: 0, baseline: null } });
+          notify(
+            status === "done"
+              ? "Tur selesai! Selamat menabung teu pira 🐷"
+              : "Tur ditutup. Buka lagi kapan saja lewat tombol ❓"
+          );
         }
       };
     },
@@ -261,6 +371,20 @@ export const useVillage = create<State>()(
     }
   )
 );
+
+// persist tidak mendengar tab lain: tanpa ini tab lama (mis. landing dengan demo yang terus
+// memanggil setState) menulis balik preferensi basi, termasuk mode sembunyikan angka.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    try {
+      if (e.storageArea === window.localStorage && (e.key === "tepira-village-ui" || e.key === null)) {
+        void useVillage.persist.rehydrate();
+      }
+    } catch {
+      // storage diblokir: preferensi cukup diingat di tab ini
+    }
+  });
+}
 
 /** Apakah angka boleh ditampilkan sekarang. */
 export function useMoneyVisible() {

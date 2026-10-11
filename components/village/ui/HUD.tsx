@@ -21,6 +21,7 @@ const DOCK: { key: Exclude<Panel, null>; icon: string; label: string }[] = [
   { key: "save", icon: "🪙", label: "Nabung" },
   { key: "spend", icon: "💸", label: "Catat" },
   { key: "wallets", icon: "👛", label: "Dompet" },
+  { key: "salary", icon: "💰", label: "Gaji" },
   { key: "log", icon: "📜", label: "Riwayat" },
   { key: "month", icon: "📊", label: "Bulan ini" }
 ];
@@ -39,6 +40,7 @@ export default function HUD() {
   const resetView = useVillage((s) => s.resetView);
   const shiftPeriod = useVillage((s) => s.shiftPeriod);
   const lock = useVillage((s) => s.lock);
+  const startTour = useVillage((s) => s.startTour);
   const [menu, setMenu] = useState(false);
 
   if (!snapshot) return null;
@@ -56,13 +58,22 @@ export default function HUD() {
 
   return (
     <>
-      <div className="hud-top-left card">
+      <div className="hud-top-left card" data-tour="hud-stats">
         <div className="hud-brand">
           <span className="brand-dot">t</span>
           <div>
             <b>tepira</b> village
             <small>desa tabunganmu · {monthLabel(period.month, period.year)}</small>
           </div>
+          <button
+            className="pill ghost tour-replay"
+            onClick={() => startTour(0)}
+            title="Tur desa: ulangi panduan"
+            aria-label="Ulangi tur desa"
+            data-tour="tour-replay"
+          >
+            ❓
+          </button>
           <button
             className="pill ghost"
             onClick={() => (snapshot.pinRequired && unlocked ? lock() : toggleUi("hideMoney"))}
@@ -80,7 +91,9 @@ export default function HUD() {
               <div style={{ width: `${xpPct}%`, background: "#f3c35b" }} />
             </div>
             <small className="muted">
-              {xp.toLocaleString("id-ID")} / {next.toLocaleString("id-ID")} XP · {totals.contributionCount} setoran
+              {/* XP bisa dihitung balik jadi total tabungan, jadi ikut disembunyikan. */}
+              {moneyShown ? `${xp.toLocaleString("id-ID")} / ${next.toLocaleString("id-ID")} XP` : "•••• XP"} ·{" "}
+              {totals.contributionCount} setoran
             </small>
           </div>
         </div>
@@ -118,7 +131,7 @@ export default function HUD() {
       </div>
 
       <div className="hud-top-center">
-        <div className="card segmented">
+        <div className="card segmented" data-tour="period-nav">
           <button className="seg" onClick={() => void shiftPeriod(-1)} title="Bulan sebelumnya">‹</button>
           <span className="seg-label">{monthLabel(period.month, period.year)}</span>
           <button className="seg" onClick={() => void shiftPeriod(1)} title="Bulan berikutnya">›</button>
@@ -168,6 +181,7 @@ export default function HUD() {
             className={`dock-btn ${panel === d.key ? "on" : ""}`}
             onClick={() => setPanel(panel === d.key ? null : d.key)}
             title={d.label}
+            data-tour={`dock-${d.key}`}
           >
             <span>{d.icon}</span>
             <small>{d.label}</small>

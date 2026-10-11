@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
-import { healthStatusFor, type Snapshot } from "@/lib/game";
+import { healthStatusFor, type SalaryView, type Snapshot } from "@/lib/game";
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -15,6 +15,43 @@ export function normalizePeriod(month?: number, year?: number) {
   return { month: m, year: y };
 }
 
+function salaryView(s: {
+  id: number;
+  amount: number;
+  totalExpenseAllocation: number;
+  savingsAllocation: number;
+  allocations: { category: string; amount: number }[];
+}): SalaryView {
+  return {
+    id: s.id,
+    amount: s.amount,
+    totalExpenseAllocation: s.totalExpenseAllocation,
+    savingsAllocation: s.savingsAllocation,
+    allocations: s.allocations.map((a) => ({ category: a.category, amount: a.amount }))
+  };
+}
+
+/** Akun dianggap baru selama ini sejak dibuat. */
+const NEW_USER_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Pengguna baru untuk tur desa: akunnya baru DAN belum punya satu baris pun atas namanya.
+ * Dihitung ketat per userId (baris lama tanpa pemilik tidak ikut, karena terlihat oleh semua
+ * akun). Batas umur akun perlu karena pemilik data lama itu juga punya hitungan 0.
+ * Setoran tidak dihitung terpisah: menyetor selalu mengklaim goal-nya.
+ */
+export async function isNewVillager(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      createdAt: true,
+      _count: { select: { goals: true, wallets: true, expenses: true, salaries: true, bonuses: true, balances: true } }
+    }
+  });
+  if (!user || Date.now() - user.createdAt.getTime() > NEW_USER_WINDOW_MS) return false;
+  return Object.values(user._count).every((n) => n === 0);
+}
+
 /**
  * Membaca semua data yang dibutuhkan desa dalam satu kali jalan.
  * Rumus skor kesehatan disalin dari tepira/lib/report-scoring.ts supaya angka
@@ -24,7 +61,7 @@ export async function buildSnapshot(userId: string, month: number, year: number)
   const ownerWhere = userOwnedWhere(userId);
   const { start, end } = monthRange(month, year);
 
-  const [user, goals, wallets, expenses, salary, bonus, balance] = await Promise.all([
+  const [user, goals, wallets, expenses, salary, bonus, balance, previousSalary] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, image: true } }),
     prisma.goal.findMany({
       where: ownerWhere,
@@ -37,9 +74,22 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       include: { wallet: { select: { name: true } } },
       orderBy: [{ date: "desc" }, { id: "desc" }]
     }),
-    prisma.salary.findFirst({ where: { month, year, ...ownerWhere }, include: { allocations: true } }),
+    // Kalau ada baris lama (userId null) DAN baris milik user di bulan yang sama, pakai milik user
+    // supaya yang tampil = yang diubah oleh saveSalaryAllocation.
+    prisma.salary.findFirst({
+      where: { month, year, ...ownerWhere },
+      include: { allocations: { orderBy: { id: "asc" } } },
+      orderBy: { userId: { sort: "asc", nulls: "last" } }
+    }),
     prisma.bonus.findFirst({ where: { month, year, ...ownerWhere }, include: { allocations: true } }),
-    prisma.balance.findFirst({ where: { month, year, ...ownerWhere } })
+    prisma.balance.findFirst({ where: { month, year, ...ownerWhere } }),
+    // Sumber "Salin dari bulan lalu" hanya baris milik user sendiri: baris lama tanpa pemilik
+    // jangan ditawarkan ke akun baru.
+    prisma.salary.findFirst({
+      where: { userId, OR: [{ year: { lt: year } }, { year, month: { lt: month } }] },
+      include: { allocations: { orderBy: { id: "asc" } } },
+      orderBy: [{ year: "desc" }, { month: "desc" }]
+    })
   ]);
 
   const totalIncome = (salary?.amount || 0) + (bonus?.amount || 0);
@@ -148,6 +198,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
         debtScore
       }
     },
+    salary: salary ? salaryView(salary) : null,
+    previousSalary: previousSalary
+      ? { ...salaryView(previousSalary), month: previousSalary.month, year: previousSalary.year }
+      : null,
     totals: {
       totalSaved,
       contributionCount: allContributions.length,

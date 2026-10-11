@@ -44,6 +44,21 @@ export interface ExpenseView {
   walletName: string | null;
 }
 
+export interface SalaryAllocationView {
+  /** Label kategori (sama seperti yang disimpan tepira, mis. "Makan harian"). */
+  category: string;
+  amount: number;
+}
+
+/** Alokasi gaji satu bulan (tabel Salary + BudgetAllocation di tepira). */
+export interface SalaryView {
+  id: number;
+  amount: number;
+  totalExpenseAllocation: number;
+  savingsAllocation: number;
+  allocations: SalaryAllocationView[];
+}
+
 export type HealthStatus = "SANGAT SEHAT" | "SEHAT" | "CUKUP" | "PERLU DIJAGA";
 
 export interface MonthSummary {
@@ -75,6 +90,10 @@ export interface Snapshot {
   wallets: WalletView[];
   expenses: ExpenseView[];
   summary: MonthSummary;
+  /** Alokasi gaji bulan terpilih, null kalau belum diatur. */
+  salary: SalaryView | null;
+  /** Alokasi gaji terakhir sebelum bulan terpilih (untuk "Salin dari bulan lalu"). */
+  previousSalary: (SalaryView & { month: number; year: number }) | null;
   totals: {
     totalSaved: number;
     contributionCount: number;

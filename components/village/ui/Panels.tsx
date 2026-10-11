@@ -4,43 +4,21 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { ContributionView, ExpenseView, GoalView, WalletView } from "@/lib/game";
 import { WALLET_TYPES, buildStage, walletEmoji } from "@/lib/game";
 import { expenseCategories } from "@/lib/categories";
-import { dateInputValue, formatRupiah, monthLabel, shortDate, timeAgo, todayInputValue } from "@/lib/format";
+import {
+  dateInputValue,
+  defaultInputDateFor,
+  formatRupiah,
+  monthLabel,
+  shortDate,
+  timeAgo,
+  todayInputValue
+} from "@/lib/format";
 import { useVillage } from "../store";
 import { Money } from "./Money";
+import { AmountInput, CATEGORY_GROUPS } from "./inputs";
+import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 
 const QUICK_AMOUNTS = [5_000, 10_000, 20_000, 50_000, 100_000, 500_000];
-
-/** Input nominal rupiah dengan pemisah ribuan. */
-function AmountInput({
-  value,
-  onChange,
-  placeholder = "0",
-  autoFocus
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  placeholder?: string;
-  autoFocus?: boolean;
-}) {
-  return (
-    <div className="amount-input">
-      <span>Rp</span>
-      <input
-        inputMode="numeric"
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        value={value ? value.toLocaleString("id-ID") : ""}
-        onChange={(e) => onChange(Number(e.target.value.replace(/[^\d]/g, "")) || 0)}
-      />
-    </div>
-  );
-}
-
-const CATEGORY_GROUPS = (() => {
-  const g: Record<string, { key: string; label: string }[]> = {};
-  for (const c of expenseCategories) (g[c.group] ??= []).push({ key: c.key, label: c.label });
-  return g;
-})();
 
 function CategorySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   // Kategori lama yang tidak ada di daftar (mis. diketik di tepira) tetap bisa dipilih.
@@ -61,7 +39,7 @@ function CategorySelect({ value, onChange }: { value: string; onChange: (v: stri
 
 function PanelShell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
-    <aside className="panel card">
+    <aside className="panel card" data-tour="panel">
       <header>
         <h2>{title}</h2>
         <button className="icon-btn" onClick={onClose} title="Tutup">✕</button>
@@ -187,7 +165,7 @@ function NewGoalForm({ onDone }: { onDone: () => void }) {
     }
   };
   return (
-    <form className="add-form" onSubmit={submit}>
+    <form className="add-form" onSubmit={submit} data-tour="goal-form">
       <label>
         Nama goal
         <input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Contoh: Dana darurat 3 bulan" />
@@ -204,7 +182,7 @@ function NewGoalForm({ onDone }: { onDone: () => void }) {
         Target tanggal (opsional)
         <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
       </label>
-      <button className="primary" type="submit" disabled={loading || !title.trim() || target <= 0}>
+      <button className="primary" type="submit" data-tour="goal-submit" disabled={loading || !title.trim() || target <= 0}>
         🏗️ Buka kavling baru
       </button>
     </form>
@@ -228,7 +206,7 @@ function GoalsPanel() {
           <NewGoalForm onDone={() => setAdding(false)} />
         </section>
       ) : (
-        <button className="primary" onClick={() => setAdding(true)}>➕ Goal baru</button>
+        <button className="primary" onClick={() => setAdding(true)} data-tour="goal-new">➕ Goal baru</button>
       )}
       <section>
         <h3>🏗️ Sedang dibangun <span className="count">{active.length}</span></h3>
@@ -283,13 +261,13 @@ function SavePanel() {
     return (
       <>
         <p className="muted">Belum ada goal. Buat dulu goal tabungan supaya ada bangunan yang bisa didirikan.</p>
-        <button className="primary" onClick={() => setPanel("goals")}>🎯 Buat goal</button>
+        <button className="primary" onClick={() => setPanel("goals")} data-tour="save-need-goal">🎯 Buat goal</button>
       </>
     );
   }
 
   return (
-    <form className="add-form" onSubmit={submit}>
+    <form className="add-form" onSubmit={submit} data-tour="save-form">
       <p className="intro">Setoran sekecil apa pun tercatat. Tiap Rp10.000 = 1 XP, tiap setoran +5 XP.</p>
       <label>
         Goal tujuan
@@ -321,7 +299,7 @@ function SavePanel() {
         Catatan (opsional)
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Sisa uang jajan hari ini" />
       </label>
-      <button className="primary" type="submit" disabled={loading || amount <= 0 || !goalId}>
+      <button className="primary" type="submit" data-tour="save-submit" disabled={loading || amount <= 0 || !goalId}>
         🪙 Setor {amount > 0 ? formatRupiah(amount) : ""}
       </button>
     </form>
@@ -333,6 +311,10 @@ function SavePanel() {
 function SpendPanel() {
   const wallets = useVillage((s) => s.snapshot?.wallets ?? []);
   const summary = useVillage((s) => s.snapshot?.summary);
+  const viewMonth = useVillage((s) => s.snapshot?.period.month ?? new Date().getMonth() + 1);
+  const viewYear = useVillage((s) => s.snapshot?.period.year ?? new Date().getFullYear());
+  const salary = useVillage((s) => s.snapshot?.salary ?? null);
+  const expenses = useVillage((s) => s.snapshot?.expenses);
   const spend = useVillage((s) => s.spend);
   const loading = useVillage((s) => s.loading);
   const setPanel = useVillage((s) => s.setPanel);
@@ -340,11 +322,22 @@ function SpendPanel() {
   const [category, setCategory] = useState<string>(expenseCategories[0].label);
   const [walletId, setWalletId] = useState<number>(wallets[0]?.id ?? 0);
   const [source, setSource] = useState<"gaji" | "bonus">("gaji");
-  const [date, setDate] = useState(todayInputValue());
+  // Lihat bulan lalu lalu buka Catat = biasanya mau mengisi bulan itu: tanggal default ikut bulan yang dilihat.
+  const viewKey = `${viewYear}-${String(viewMonth).padStart(2, "0")}`;
+  const [date, setDate] = useState(() => defaultInputDateFor(viewMonth, viewYear));
+  const [dateFor, setDateFor] = useState(viewKey);
+  if (dateFor !== viewKey) {
+    setDateFor(viewKey);
+    setDate(defaultInputDateFor(viewMonth, viewYear));
+  }
   const [note, setNote] = useState("");
   useEffect(() => {
     if (!walletId && wallets[0]) setWalletId(wallets[0].id);
   }, [walletId, wallets]);
+  // Sisa budget hanya benar untuk bulan yang sedang dimuat; tanggal kosong = hari ini (aturan server).
+  const dateMonth = (date || todayInputValue()).slice(0, 7);
+  const sameMonth = dateMonth === viewKey;
+  const hasBudget = Boolean(salary) || (summary !== undefined && summary.budget.status !== "NO_BUDGET");
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -360,14 +353,14 @@ function SpendPanel() {
     return (
       <>
         <p className="muted">Pengeluaran harus dipotong dari dompet. Buat dompet dulu, ya.</p>
-        <button className="primary" onClick={() => setPanel("wallets")}>👛 Buat dompet</button>
+        <button className="primary" onClick={() => setPanel("wallets")} data-tour="spend-need-wallet">👛 Buat dompet</button>
       </>
     );
   }
 
   return (
-    <form className="add-form" onSubmit={submit}>
-      {summary && summary.budget.status !== "NO_BUDGET" && (
+    <form className="add-form" onSubmit={submit} data-tour="spend-form">
+      {sameMonth && summary && summary.budget.status !== "NO_BUDGET" && (
         <p className={`intro ${summary.budget.status === "OVER_BUDGET" ? "warn" : ""}`}>
           Sisa budget bulan ini: <b><Money value={summary.budget.remaining} /></b>
         </p>
@@ -380,6 +373,15 @@ function SpendPanel() {
         Kategori
         <CategorySelect value={category} onChange={setCategory} />
       </label>
+      {sameMonth && salary && source === "gaji" && (
+        <CategoryBudgetHint salary={salary} expenses={expenses ?? []} category={category} amount={amount} />
+      )}
+      {!sameMonth && hasBudget && /^\d{4}-\d{2}$/.test(dateMonth) && (
+        <p className="cat-hint">
+          Jatah {monthLabel(Number(dateMonth.slice(5, 7)), Number(dateMonth.slice(0, 4)))} tidak dimuat. Pindah ke bulan itu
+          untuk melihat sisa budget.
+        </p>
+      )}
       <label>
         Dompet
         <select value={walletId} onChange={(e) => setWalletId(Number(e.target.value))}>
@@ -407,7 +409,7 @@ function SpendPanel() {
         Catatan (opsional)
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makan siang" />
       </label>
-      <button className="primary spend" type="submit" disabled={loading || amount <= 0 || !walletId}>
+      <button className="primary spend" type="submit" data-tour="spend-submit" disabled={loading || amount <= 0 || !walletId}>
         💸 Catat {amount > 0 ? formatRupiah(amount) : ""}
       </button>
     </form>
@@ -434,7 +436,7 @@ function WalletForm({ wallet, onDone }: { wallet?: WalletView; onDone: () => voi
     if (ok) onDone();
   };
   return (
-    <form className="add-form" onSubmit={submit}>
+    <form className="add-form" onSubmit={submit} data-tour={wallet ? "wallet-edit-form" : "wallet-form"}>
       <label>
         Nama dompet
         <input required value={name} onChange={(e) => setName(e.target.value)} placeholder="BCA, GoPay, Dompet tunai…" />
@@ -461,7 +463,7 @@ function WalletForm({ wallet, onDone }: { wallet?: WalletView; onDone: () => voi
         Catatan (opsional)
         <input value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
-      <button className="primary" type="submit" disabled={loading || !name.trim()}>
+      <button className="primary" type="submit" data-tour={wallet ? undefined : "wallet-submit"} disabled={loading || !name.trim()}>
         {wallet ? "💾 Simpan perubahan" : "👛 Tambah dompet"}
       </button>
     </form>
@@ -504,7 +506,7 @@ function WalletsPanel() {
           <div><small>Bersih</small><b><Money value={totals.netWorth} /></b></div>
         </div>
       )}
-      <button className="primary" onClick={() => setMode("add")}>➕ Dompet baru</button>
+      <button className="primary" onClick={() => setMode("add")} data-tour="wallet-new">➕ Dompet baru</button>
       <section>
         <h3>Peti dompet <span className="count">{wallets.length}</span></h3>
         {wallets.length === 0 && <p className="muted">Belum ada dompet. Dompet dipakai untuk memotong saldo saat mencatat pengeluaran.</p>}
@@ -744,6 +746,7 @@ function LogPanel() {
 
 function MonthPanel() {
   const snapshot = useVillage((s) => s.snapshot);
+  const setPanel = useVillage((s) => s.setPanel);
   if (!snapshot) return null;
   const { summary } = snapshot;
   const h = summary.health;
@@ -752,7 +755,7 @@ function MonthPanel() {
   const scoreColor = h.score >= 85 ? "#2fb57d" : h.score >= 70 ? "#5b9ae0" : h.score >= 55 ? "#e0b84a" : "#e86d6d";
   return (
     <>
-      <div className="score-card">
+      <div className="score-card" data-tour="month-score">
         <div className="hall-ring big" style={{ background: `conic-gradient(${scoreColor} ${h.score}%, #f1e4ea 0)` }}>
           <span>{h.score}</span>
         </div>
@@ -778,7 +781,10 @@ function MonthPanel() {
           <div className="log-row spend"><span className="log-text">Pengeluaran ({summary.expenses.count}x)</span><b className="spend-text"><Money value={summary.expenses.total} /></b></div>
           <div className="log-row"><span className="log-text">Budget pengeluaran</span><b>{summary.budget.status === "NO_BUDGET" ? "—" : <Money value={summary.budget.limit} />}</b></div>
         </div>
-        <p className="muted small">Alokasi gaji, bonus, dan saldo awal diatur lewat tepira.id (halaman Alokasi Gaji / Bonus / Saldo Awal).</p>
+        <button className="pill salary-open" onClick={() => setPanel("salary")}>
+          💰 Atur alokasi gaji
+        </button>
+        <p className="muted small">Bonus dan saldo awal masih diatur lewat tepira.id (halaman Bonus / Saldo Awal).</p>
       </section>
       <section>
         <h3>Per kategori</h3>
@@ -801,6 +807,7 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   save: "🪙 Nabung teu pira",
   spend: "💸 Catat pengeluaran",
   wallets: "👛 Dompet",
+  salary: "💰 Alokasi gaji",
   log: "📜 Riwayat",
   month: "📊 Bulan ini"
 };
@@ -815,6 +822,7 @@ export default function Panels() {
       {panel === "save" && <SavePanel />}
       {panel === "spend" && <SpendPanel />}
       {panel === "wallets" && <WalletsPanel />}
+      {panel === "salary" && <SalaryPanel />}
       {panel === "log" && <LogPanel />}
       {panel === "month" && <MonthPanel />}
     </PanelShell>

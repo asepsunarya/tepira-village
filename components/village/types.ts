@@ -1,4 +1,4 @@
-export type Panel = "goals" | "save" | "spend" | "wallets" | "log" | "month" | null;
+export type Panel = "goals" | "save" | "spend" | "wallets" | "salary" | "log" | "month" | null;
 export type TimeOfDay = "auto" | "day" | "cloudy" | "sunset" | "night";
 
 export interface WorldToast {

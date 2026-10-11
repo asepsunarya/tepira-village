@@ -17,7 +17,8 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | Goal 100%                     | Bangunan rampung: cerobong, bendera, jendela menyala, konfeti 🎉         |
 | Dompet (wallet)               | Peti harta di sisi utara. Ukuran ikut porsi saldo, dompet utang merah   |
 | Pengeluaran (expense)         | Si penabung ke Warung, `-Rp…`, saldo dompet dipotong (aturan tepira)    |
-| Alokasi gaji / bonus / saldo  | Dibaca untuk sisa budget & skor; diatur lewat tepira.id                 |
+| Alokasi gaji                  | Panel 💰 Gaji: bagi gaji ke 9 kategori + tabungan (total harus pas), jatah vs realisasi per kategori. Disimpan dengan aturan `createSalaryBudget` tepira |
+| Bonus / saldo awal            | Dibaca untuk sisa budget & skor; masih diatur lewat tepira.id           |
 | Skor kesehatan (Laporan)      | Cincin skor di Balai Desa + cuaca otomatis (≥70 cerah, ≥55 berawan, <55 senja) |
 | —                             | Level desa: 1 XP per Rp10.000 ditabung + 5 XP per setoran               |
 
@@ -27,22 +28,26 @@ Level & XP dihitung di client dari data yang sudah ada (tidak menambah tabel bar
 
 ```
 app/
-  page.tsx                landing → redirect ke /village jika sudah login
+  page.tsx                landing (hero desa contoh 3D) → redirect ke /village jika sudah login
+  landing.css             gaya landing & login, di-scope ke .lp (body tetap overflow:hidden untuk /village)
   login/page.tsx          login Google (Auth.js v5), opsional dev-login
   village/page.tsx        server component: auth + buildSnapshot → <VillageApp/>
-  village/actions.ts      server actions: nabung, catat pengeluaran, goal, dompet (semua balikin snapshot baru)
+  village/actions.ts      server actions: nabung, catat pengeluaran, goal, dompet, alokasi gaji (semua balikin snapshot baru)
   api/auth/[...nextauth]  handler Auth.js
 lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
   wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
   game.ts                 tipe Snapshot, level/XP, tahap bangunan
+  demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
 components/village/
   store.ts                zustand: snapshot dari server + preferensi visual (localStorage)
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, preset cuaca
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
-  ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Riwayat / Bulan ini), PinGate
+  ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini), SalaryPanel, PinGate, Tutorial
+  tutorial/               langkah & progres tur pengguna baru (localStorage per user)
+components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 prisma/schema.prisma      SALINAN skema tepira — repo ini tidak punya migrasi sendiri
 ```
 
@@ -110,6 +115,8 @@ Supaya env tidak perlu disalin ulang antar project, pakai **Shared Environment V
 Environment Variables buka tab **Shared**, masukkan nilainya sekali (mis. `DATABASE_URL`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`), lalu tautkan ke project `tepira` dan `tepira-village`. Kedua project akan memakai
 nilai yang sama. Env yang memang harus berbeda (`AUTH_URL`, opsional `AUTH_SECRET`) tetap diset per project.
+Opsional: `NEXT_PUBLIC_SITE_URL` (mis. `https://desa.contoh.id`) untuk URL absolut gambar pratinjau link (og:image);
+tanpa itu dipakai domain produksi Vercel.
 Koneksi Prisma otomatis diberi `connection_limit=1` untuk serverless (sama dengan tepira).
 
 ## Kalau skema tepira berubah
@@ -118,6 +125,25 @@ Koneksi Prisma otomatis diberi `connection_limit=1` untuk serverless (sama denga
 2. `npm run prisma:generate`, lalu `npm run typecheck`.
 3. Kalau tepira mengubah aturan bisnis di `lib/wallet-expenses.ts` atau `lib/report-scoring.ts`, port ulang ke
    `lib/wallet-expenses.ts` dan `lib/snapshot.ts` di sini supaya kedua app tetap konsisten.
+
+## Tur untuk pengguna baru
+
+Pengguna baru otomatis disambut **tur desa** interaktif
+(`components/village/ui/Tutorial.tsx`, langkah di `components/village/tutorial/steps.tsx`): sorotan menunjuk UI asli
+lewat atribut `data-tour`, lalu tiap langkah aksi **menunggu kamu benar-benar melakukannya** (buat dompet → bagi gaji →
+buka goal → setor pertama → catat pengeluaran opsional) dan lanjut sendiri begitu snapshot dari server menunjukkan
+aksinya berhasil. Langkah yang sudah terpenuhi tampil "Sudah ✓". Desa tetap bisa dipakai selama tur (lapisan gelapnya
+tidak menangkap klik).
+
+- "Baru" dinilai server sekali saat `/village` dimuat (`isNewVillager` di `lib/snapshot.ts`): akun dibuat ≤14 hari lalu
+  **dan** belum punya satu pun goal/dompet/pengeluaran/gaji/bonus/saldo awal dengan `userId` miliknya. Baris lama tanpa
+  pemilik (`userId` null) sengaja tidak dihitung karena terlihat oleh semua akun.
+
+- Progres disimpan per user di `localStorage` (`tepira-village-tour:v1:<email>` → `{ status, step }`), **bukan** di
+  database. Tur yang belum selesai dilanjutkan saat reload; user lama tidak pernah dimulai otomatis.
+- Tombol ❓ di kartu kiri atas mengulang tur kapan saja. `Esc` menutup tur (kecuali saat mengetik di kolom isian),
+  `Enter`/`→` = Lanjut di langkah info.
+- Kalau `APP_PIN` aktif, tur baru muncul setelah PIN dibuka.
 
 ## Kontrol
 

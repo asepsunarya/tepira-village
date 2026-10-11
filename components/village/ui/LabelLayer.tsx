@@ -119,6 +119,7 @@ function WarungLabel() {
 }
 
 function HallLabel() {
+  const moneyVisible = useMoneyVisible();
   const totals = useVillage((s) => s.snapshot?.totals);
   const health = useVillage((s) => s.snapshot?.summary.health);
   const xp = totals ? villageXp(totals.totalSaved, totals.contributionCount) : 0;
@@ -143,7 +144,9 @@ function HallLabel() {
             <div style={{ width: `${pct}%`, background: "#f3c35b" }} />
           </div>
           <div className="hall-sub muted">
-            {xp.toLocaleString("id-ID")} / {next.toLocaleString("id-ID")} XP · {health?.status ?? "–"}
+            {/* XP bisa dihitung balik jadi total tabungan, jadi ikut disembunyikan. */}
+            {moneyVisible ? `${xp.toLocaleString("id-ID")} / ${next.toLocaleString("id-ID")} XP` : "•••• XP"} ·{" "}
+            {health?.status ?? "–"}
           </div>
         </div>
       </div>
@@ -169,13 +172,16 @@ function VillagerLabel() {
 }
 
 function ToastLabels() {
+  const moneyVisible = useMoneyVisible();
   const toasts = useVillage((s) => s.toasts);
   return (
     <>
       {toasts.map((t) => (
         <WorldLabel key={t.id} id={`toast-${t.id}`} position={[t.x, t.y, t.z]} anchor="center">
           <div className={`xp-toast tone-${t.tone}`}>
-            <div className="xp-toast-main">{t.text}</div>
+            <div className="xp-toast-main">
+              {moneyVisible || t.tone === "info" ? t.text : t.tone === "save" ? "+••••" : "-••••"}
+            </div>
             {t.sub && <div className="xp-toast-sub">{t.sub}</div>}
           </div>
         </WorldLabel>
