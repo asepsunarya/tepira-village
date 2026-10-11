@@ -58,6 +58,23 @@ cp .env.example .env     # isi DATABASE_URL (sama dengan tepira), AUTH_SECRET, G
 npm run dev              # http://localhost:3000
 ```
 
+#### Mengambil env dari project Vercel tepira
+
+```bash
+vercel link              # pilih project "tepira"
+vercel env pull .env.local
+```
+
+`vercel env pull` hanya mengambil env yang **bukan Secret** dan env untuk environment **Development**.
+Nilai yang ditandai Secret (mis. `DATABASE_URL`, `GOOGLE_CLIENT_SECRET`) tidak ikut dan harus diambil dari
+sumber aslinya:
+
+- **Supabase** → Settings → API (dan Settings → Database untuk connection string)
+- **Google Cloud Console** → APIs & Services → Credentials (OAuth client)
+
+`.env.local` sudah di-ignore oleh git. Next.js membaca `.env.local` (dan memprioritaskannya di atas `.env`),
+tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
+
 ### Variabel environment
 
 | Nama                         | Keterangan                                                                                  |
@@ -87,7 +104,12 @@ Jangan pernah menjalankan `db:push:dev` ke database produksi; skema & migrasi di
 npm run typecheck && npm run lint && npm run build
 ```
 
-Deploy ke Vercel seperti tepira: set env di Project Settings. `postinstall` menjalankan `prisma generate`.
+Deploy ke Vercel seperti tepira. `postinstall` menjalankan `prisma generate`.
+
+Supaya env tidak perlu disalin ulang antar project, pakai **Shared Environment Variables**: di halaman
+Environment Variables buka tab **Shared**, masukkan nilainya sekali (mis. `DATABASE_URL`, `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`), lalu tautkan ke project `tepira` dan `tepira-village`. Kedua project akan memakai
+nilai yang sama. Env yang memang harus berbeda (`AUTH_URL`, opsional `AUTH_SECRET`) tetap diset per project.
 Koneksi Prisma otomatis diberi `connection_limit=1` untuk serverless (sama dengan tepira).
 
 ## Kalau skema tepira berubah
