@@ -4,6 +4,7 @@ import { useState } from "react";
 import { levelFor, levelTitle, villageXp, xpForLevel } from "@/lib/game";
 import { monthLabel } from "@/lib/format";
 import { signOutAction } from "@/app/village/actions";
+import { LogoMark } from "@/components/brand/Logo";
 import { useVillage } from "../store";
 import type { Panel, TimeOfDay } from "../types";
 import { Money } from "./Money";
@@ -60,7 +61,7 @@ export default function HUD() {
     <>
       <div className="hud-top-left card" data-tour="hud-stats">
         <div className="hud-brand">
-          <span className="brand-dot">t</span>
+          <LogoMark size={36} className="brand-dot" />
           <div>
             <b>tepira</b> village
             <small>desa tabunganmu · {monthLabel(period.month, period.year)}</small>

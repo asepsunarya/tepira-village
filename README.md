@@ -1,4 +1,6 @@
-# 🏡 tepira village
+<p align="center"><img src="public/brand/mark.svg" width="112" height="112" alt="Logo tepira village: rumah kecil dan pohon di atas pulau yang tepinya koin emas"></p>
+
+# tepira village
 
 Versi **interaktif & cozy** dari [tepira.id](https://github.com/asepsunarya/tepira): pulau pastel 3D low-poly
 tempat setiap goal tabungan jadi bangunan yang tumbuh tiap kamu menyetor. Pengeluaran tercatat di warung,
@@ -48,6 +50,8 @@ components/village/
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini), SalaryPanel, PinGate, Tutorial
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
+components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
+public/brand/             mark.svg, mark-small.svg (= favicon.svg), app-icon.svg (sumber apple-touch-icon & icon-192/512)
 prisma/schema.prisma      SALINAN skema tepira — repo ini tidak punya migrasi sendiri
 ```
 

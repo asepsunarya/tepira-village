@@ -21,7 +21,15 @@ export const metadata: Metadata = {
   title: "tepira village – desa tabunganmu",
   description:
     "Versi interaktif tepira.id: setiap goal tabungan jadi bangunan yang tumbuh tiap kamu menyetor. Data sama dengan tepira.id.",
-  icons: { icon: "/favicon.svg" },
+  // Logo Pulau Koin. Browser modern memakai SVG; .ico (16/32/48) untuk yang lama. sizes="32x32" di .ico
+  // supaya Chrome tetap memilih SVG. Ikon PWA 192/512 ada di app/manifest.ts.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/favicon.svg", type: "image/svg+xml" }
+    ],
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180" }
+  },
   openGraph: {
     title: "tepira village – desa tabunganmu",
     description: "Nabung dari hal yang teu pira, lihat desamu tumbuh.",

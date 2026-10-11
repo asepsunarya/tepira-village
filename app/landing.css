@@ -88,8 +88,13 @@ html:has(.lp) { scroll-padding-top: 96px; }
 .lp-brand { min-height: 44px; padding-right: 6px; border-radius: 999px; }
 .lp-brand-text { display: block; font-size: 16px; line-height: 1.15; }
 .lp .hud-brand small { font-size: 12px; color: var(--lp-ink-2); }
-.lp-brand .brand-dot { transition: rotate 0.2s ease; }
-.lp-brand:hover .brand-dot { rotate: -10deg; }
+.lp-brand .brand-dot { transform-origin: 50% 80%; transition: rotate 0.2s ease, transform 0.2s ease; }
+/* Pulau sedikit terangkat & miring saat hover, seperti mengapung. */
+.lp-brand:hover .brand-dot { rotate: -6deg; transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-brand .brand-dot { transition: none; }
+  .lp-brand:hover .brand-dot { rotate: none; transform: none; }
+}
 
 /* ---------- tombol ---------- */
 .lp-btn {
