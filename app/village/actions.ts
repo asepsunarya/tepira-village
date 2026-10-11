@@ -3,7 +3,11 @@
 import { prisma } from "@/lib/prisma";
 import { auth, signOut, userOwnedWhere } from "@/lib/auth";
 import { buildSnapshot, normalizePeriod } from "@/lib/snapshot";
-import { createExpenseWithWallet, deleteExpenseAndRestoreWallet } from "@/lib/wallet-expenses";
+import {
+  createExpenseWithWallet,
+  deleteExpenseAndRestoreWallet,
+  updateExpenseWithWallet
+} from "@/lib/wallet-expenses";
 import type { ActionResult } from "@/lib/game";
 
 /**
@@ -40,6 +44,13 @@ const toInt = (v: unknown) => {
 };
 const clean = (v: unknown) => String(v ?? "").trim();
 
+/** Kolom nominal di skema tepira bertipe Int (32-bit). */
+const MAX_AMOUNT = 2_147_483_647;
+function assertAmount(amount: number, label = "Nominal") {
+  if (amount <= 0) throw new Error(`${label} harus lebih dari 0.`);
+  if (amount > MAX_AMOUNT) throw new Error(`${label} terlalu besar (maksimal Rp2.147.483.647).`);
+}
+
 export async function fetchSnapshot(period: Period): Promise<ActionResult> {
   return run(period, async () => {});
 }
@@ -54,7 +65,7 @@ export async function createGoal(
     const title = clean(input.title);
     const targetAmount = toInt(input.targetAmount);
     if (!title) throw new Error("Nama goal harus diisi.");
-    if (targetAmount <= 0) throw new Error("Target harus lebih dari 0.");
+    assertAmount(targetAmount, "Target");
     const deadline = clean(input.deadline);
     await prisma.goal.create({
       data: {
@@ -82,7 +93,8 @@ export async function addContribution(
   return run(period, async (userId) => {
     const goalId = toInt(input.goalId);
     const amount = toInt(input.amount);
-    if (!goalId || amount <= 0) throw new Error("Nominal harus lebih dari 0.");
+    if (!goalId) throw new Error("Goal wajib dipilih.");
+    assertAmount(amount);
     const goal = await prisma.goal.findFirst({ where: { id: goalId, ...userOwnedWhere(userId) } });
     if (!goal) throw new Error("Goal tidak ditemukan.");
     await prisma.contribution.create({ data: { goalId, amount, note: clean(input.note) || null } });
@@ -97,6 +109,23 @@ export async function deleteContribution(contributionId: number, period: Period)
     await prisma.contribution.deleteMany({
       where: { id: contributionId, goal: userOwnedWhere(userId) }
     });
+  });
+}
+
+export async function updateContribution(
+  contributionId: number,
+  input: { amount: number; note?: string; date?: string },
+  period: Period
+): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const amount = toInt(input.amount);
+    assertAmount(amount);
+    const dateRaw = clean(input.date);
+    const { count } = await prisma.contribution.updateMany({
+      where: { id: contributionId, goal: userOwnedWhere(userId) },
+      data: { amount, note: clean(input.note) || null, ...(dateRaw ? { date: new Date(dateRaw) } : {}) }
+    });
+    if (!count) throw new Error("Setoran tidak ditemukan.");
   });
 }
 
@@ -117,7 +146,7 @@ export async function addExpense(
     const amount = toInt(input.amount);
     const walletId = toInt(input.walletId);
     const source = clean(input.source) || "gaji";
-    if (amount <= 0) throw new Error("Nominal harus lebih dari 0.");
+    assertAmount(amount);
     if (source !== "gaji" && source !== "bonus") throw new Error("Sumber harus 'gaji' atau 'bonus'.");
     if (!walletId) throw new Error("Dompet wajib dipilih.");
     const dateRaw = clean(input.date);
@@ -127,6 +156,31 @@ export async function addExpense(
       note: clean(input.note) || null,
       source,
       date: dateRaw ? new Date(dateRaw) : new Date(),
+      walletId
+    });
+  });
+}
+
+export async function updateExpense(
+  expenseId: number,
+  input: Parameters<typeof addExpense>[0],
+  period: Period
+): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const amount = toInt(input.amount);
+    const walletId = toInt(input.walletId);
+    const source = clean(input.source) || "gaji";
+    assertAmount(amount);
+    if (source !== "gaji" && source !== "bonus") throw new Error("Sumber harus 'gaji' atau 'bonus'.");
+    if (!walletId) throw new Error("Dompet wajib dipilih.");
+    const dateRaw = clean(input.date);
+    await updateExpenseWithWallet(userId, toInt(expenseId), {
+      amount,
+      category: clean(input.category) || null,
+      note: clean(input.note) || null,
+      source,
+      // Kosong = tanggal lama dipertahankan (termasuk jam aslinya).
+      date: dateRaw ? new Date(dateRaw) : undefined,
       walletId
     });
   });

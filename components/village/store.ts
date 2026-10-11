@@ -49,8 +49,10 @@ interface State {
   deleteGoal: (goalId: number) => Promise<void>;
   save: (input: { goalId: number; amount: number; note?: string }) => Promise<boolean>;
   deleteContribution: (id: number) => Promise<void>;
+  updateContribution: (id: number, input: Parameters<typeof actions.updateContribution>[1]) => Promise<boolean>;
   spend: (input: Parameters<typeof actions.addExpense>[0]) => Promise<boolean>;
   deleteExpense: (id: number) => Promise<void>;
+  updateExpense: (id: number, input: Parameters<typeof actions.updateExpense>[1]) => Promise<boolean>;
   createWallet: (input: Parameters<typeof actions.createWallet>[0]) => Promise<boolean>;
   updateWallet: (id: number, input: Parameters<typeof actions.updateWallet>[1]) => Promise<boolean>;
   deleteWallet: (id: number) => Promise<void>;
@@ -214,6 +216,11 @@ export const useVillage = create<State>()(
         deleteContribution: async (id) => {
           await mutate(() => actions.deleteContribution(id, period()));
         },
+        updateContribution: async (id, input) => {
+          const ok = await mutate(() => actions.updateContribution(id, input, period()));
+          if (ok) notify("Setoran diperbarui.");
+          return ok;
+        },
         spend: async (input) => {
           const ok = await mutate(() => actions.addExpense(input, period()));
           if (ok) {
@@ -233,6 +240,11 @@ export const useVillage = create<State>()(
         deleteExpense: async (id) => {
           const ok = await mutate(() => actions.deleteExpense(id, period()));
           if (ok) notify("Pengeluaran dihapus, saldo dompet dikembalikan.");
+        },
+        updateExpense: async (id, input) => {
+          const ok = await mutate(() => actions.updateExpense(id, input, period()));
+          if (ok) notify("Pengeluaran diperbarui & saldo dompet disesuaikan.");
+          return ok;
         },
         createWallet: async (input) => mutate(() => actions.createWallet(input, period())),
         updateWallet: async (id, input) => mutate(() => actions.updateWallet(id, input, period())),

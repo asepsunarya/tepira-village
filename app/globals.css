@@ -191,6 +191,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .log-row.spend { border-color: #ffe0d6; }
 .log-row > .muted:first-child { flex-shrink: 0; width: 48px; font-size: 11px; }
 .log-text { flex: 1; min-width: 0; }
+.log-edit { background: #fff; border-radius: 12px; padding: 10px; border: 2px solid #ffbdd8; gap: 10px; }
+.log-edit.save { border-color: #a9e2cf; }
+.log-edit.spend { border-color: #ffc7b3; }
 .save-text { color: #1f8a63; }
 .spend-text { color: #c23b3b; }
 .money.hidden { letter-spacing: 0.1em; color: var(--ink-soft); }

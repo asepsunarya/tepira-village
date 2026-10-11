@@ -1,6 +1,12 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
+    { "name": "dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 },
+    {
+      "name": "dev-local-db",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "DATABASE_URL=postgresql://aseps@localhost:5432/tepira_village_dev DEV_LOGIN_EMAIL=dev@tepira.local APP_PIN= AUTH_URL=http://localhost:3001 npx next dev -p 3001"],
+      "port": 3001
+    }
   ]
 }
