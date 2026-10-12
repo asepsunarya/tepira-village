@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ContributionView, ExpenseView, GoalPace, GoalView, WalletView } from "@/lib/game";
 import {
   MAX_VILLAGERS,
@@ -15,16 +15,19 @@ import {
   wibDayDate,
   xpForLevel
 } from "@/lib/game";
-import { expenseCategories } from "@/lib/categories";
+import { expenseCategories, getCategoryLabel } from "@/lib/categories";
 import {
   dateInputValue,
   defaultInputDateFor,
   formatRupiah,
+  inputDateDaysAgo,
+  inputDateLabel,
   monthLabel,
   shortDate,
   timeAgo,
   todayInputValue
 } from "@/lib/format";
+import { parseQuickEntry, type QuickEntry } from "@/lib/quick-entry";
 import { useMoneyVisible, useVillage } from "../store";
 import { useLetter, useStreak, useVillageXp } from "../useProgress";
 import { Money } from "./Money";
@@ -469,13 +472,73 @@ function SpendPanel() {
   const sameMonth = dateMonth === viewKey;
   const hasBudget = Boolean(salary) || (summary !== undefined && summary.budget.status !== "NO_BUDGET");
 
+  // ⚡ Catat cepat: kalimat ("bakso 15rb gopay") langsung mengisi form di bawahnya.
+  const moneyVisible = useMoneyVisible();
+  const [quick, setQuick] = useState("");
+  const [parsed, setParsed] = useState<QuickEntry | null>(null);
+  const [quickHint, setQuickHint] = useState<string | null>(null);
+  // Isian sebelum mulai mengetik (atau yang diubah manual sesudahnya): dipakai lagi untuk bagian
+  // yang tidak disebut di kalimat, jadi menghapus "gopay" mengembalikan dompet semula.
+  const base = useRef({ category, walletId, date, source });
+  const typeQuick = (text: string) => {
+    if (!quick.trim() && text.trim()) base.current = { category, walletId, date, source };
+    setQuick(text);
+    setQuickHint(null);
+    if (!text.trim()) {
+      setParsed(null);
+      if (quick.trim()) {
+        // Kalimatnya dihapus: kembalikan isian yang tadi diisi olehnya.
+        setAmount(0);
+        setNote("");
+        setCategory(base.current.category);
+        setWalletId(base.current.walletId);
+        setDate(base.current.date);
+        setSource(base.current.source);
+      }
+      return;
+    }
+    const p = parseQuickEntry(text, wallets);
+    setParsed(p);
+    setAmount(p.amount ?? 0);
+    setCategory(p.categoryKey ? getCategoryLabel(p.categoryKey) : base.current.category);
+    setWalletId(p.walletId ?? base.current.walletId);
+    setDate(p.daysAgo !== null ? inputDateDaysAgo(p.daysAgo) : base.current.date);
+    setSource(p.source ?? base.current.source);
+    setNote(p.note);
+  };
+  const pickCategory = (v: string) => {
+    setCategory(v);
+    base.current.category = v;
+  };
+  const pickWallet = (v: number) => {
+    setWalletId(v);
+    base.current.walletId = v;
+  };
+  const pickSource = (v: "gaji" | "bonus") => {
+    setSource(v);
+    base.current.source = v;
+  };
+  const pickDate = (v: string) => {
+    setDate(v);
+    base.current.date = v;
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (amount <= 0 || !walletId) return;
+    const fromQuick = Boolean(quick.trim());
     const ok = await spend({ amount, category, note, source, date, walletId });
     if (ok) {
       setAmount(0);
       setNote("");
+      setQuick("");
+      setParsed(null);
+      if (fromQuick) {
+        // Tiap kalimat menyebut tanggalnya sendiri; yang berikutnya mulai dari tanggal bawaan lagi.
+        // Dompet & kategori tetap seperti form biasa.
+        setDate(defaultInputDateFor(viewMonth, viewYear));
+        setSource("gaji");
+      }
     }
   };
 
@@ -492,6 +555,43 @@ function SpendPanel() {
   return (
     <>
       <form className="add-form" onSubmit={submit} data-tour="spend-form">
+        {/* Ikut mode sembunyikan angka: nominal yang diketik ikut terlihat, jadi kolomnya ditutup juga. */}
+        {moneyVisible && (
+          <div className="quick-entry">
+            <label>
+              ⚡ Catat cepat
+              <input
+                value={quick}
+                onChange={(e) => typeQuick(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || (amount > 0 && walletId)) return;
+                  e.preventDefault();
+                  setQuickHint(amount > 0 ? "Pilih dompetnya dulu." : "Nominalnya belum terbaca. Tulis misalnya 15rb atau 15.000.");
+                }}
+                placeholder="kopi 20rb gopay · kemarin parkir 2rb"
+                autoFocus
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                enterKeyHint="send"
+                aria-describedby="quick-preview"
+              />
+            </label>
+            {parsed && (
+              <QuickPreview
+                parsed={parsed}
+                amount={amount}
+                category={category}
+                wallet={wallets.find((w) => w.id === walletId)}
+                date={date}
+                source={source}
+              />
+            )}
+            {quickHint && <p className="cat-hint warn">{quickHint}</p>}
+            {!quick && <small className="muted">Ketik seperti chat lalu Enter. Isian di bawah ikut terisi dan masih bisa diubah.</small>}
+          </div>
+        )}
         {sameMonth && summary && summary.budget.status !== "NO_BUDGET" && (
           <p className={`intro ${summary.budget.status === "OVER_BUDGET" ? "warn" : ""}`}>
             Sisa budget bulan ini: <b><Money value={summary.budget.remaining} /></b>
@@ -499,11 +599,11 @@ function SpendPanel() {
         )}
         <label>
           Nominal
-          <AmountInput value={amount} onChange={setAmount} placeholder="25.000" autoFocus />
+          <AmountInput value={amount} onChange={setAmount} placeholder="25.000" />
         </label>
         <label>
           Kategori
-          <CategorySelect value={category} onChange={setCategory} />
+          <CategorySelect value={category} onChange={pickCategory} />
         </label>
         {sameMonth && salary && source === "gaji" && (
           <CategoryBudgetHint salary={salary} expenses={expenses ?? []} category={category} amount={amount} />
@@ -516,7 +616,7 @@ function SpendPanel() {
         )}
         <label>
           Dompet
-          <select value={walletId} onChange={(e) => setWalletId(Number(e.target.value))}>
+          <select value={walletId} onChange={(e) => pickWallet(Number(e.target.value))}>
             {wallets.map((w) => (
               <option key={w.id} value={w.id}>
                 {walletEmoji(w.type)} {w.name}
@@ -527,14 +627,14 @@ function SpendPanel() {
         <div className="two-col">
           <label>
             Sumber
-            <select value={source} onChange={(e) => setSource(e.target.value as "gaji" | "bonus")}>
+            <select value={source} onChange={(e) => pickSource(e.target.value as "gaji" | "bonus")}>
               <option value="gaji">Gaji</option>
               <option value="bonus">Bonus</option>
             </select>
           </label>
           <label>
             Tanggal
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <input type="date" value={date} onChange={(e) => pickDate(e.target.value)} />
           </label>
         </div>
         <label>
@@ -547,6 +647,37 @@ function SpendPanel() {
       </form>
       <NoSpendToday />
     </>
+  );
+}
+
+/** Hasil baca catat cepat: yang terbaca dari kalimat ditebalkan, sisanya masih isian form. */
+function QuickPreview({
+  parsed,
+  amount,
+  category,
+  wallet,
+  date,
+  source
+}: {
+  parsed: QuickEntry;
+  amount: number;
+  category: string;
+  wallet: WalletView | undefined;
+  date: string;
+  source: "gaji" | "bonus";
+}) {
+  return (
+    <div className="quick-preview" id="quick-preview" aria-live="polite">
+      <span className={`qchip ${parsed.amount ? "found" : "missing"}`}>{parsed.amount ? formatRupiah(amount) : "nominal?"}</span>
+      {/* "Langganan (Spotify, Netflix, dll)" → "Langganan" */}
+      <span className={`qchip ${parsed.categoryKey ? "found" : ""}`}>{category.replace(/\s*\(.*\)$/, "")}</span>
+      <span className={`qchip ${parsed.walletId ? "found" : ""}`}>
+        {wallet ? `${walletEmoji(wallet.type)} ${wallet.name}` : "dompet?"}
+      </span>
+      <span className={`qchip ${parsed.daysAgo !== null ? "found" : ""}`}>{inputDateLabel(date)}</span>
+      {source === "bonus" && <span className={`qchip ${parsed.source ? "found" : ""}`}>dari bonus</span>}
+      {parsed.assumedThousands && <small className="muted">angka kecil dianggap ribuan</small>}
+    </div>
   );
 }
 

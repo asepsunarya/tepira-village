@@ -432,6 +432,18 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
   .streak-row.todo .streak-today { animation: none; }
 }
 
+/* ---------- catat cepat ---------- */
+.quick-entry { display: flex; flex-direction: column; gap: 6px; background: #fff8ec; border: 2px solid #f6dca0; border-radius: 14px; padding: 10px; }
+.add-form .quick-entry label { color: #a87a12; }
+.add-form .quick-entry input { background: #fff; font-size: 15px; }
+.add-form .quick-entry input:focus { border-color: #f3c35b; }
+.quick-entry > small { font-size: 11px; }
+.quick-preview { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.qchip { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #fff; border: 1.5px solid #f1e4ea; color: var(--ink-soft); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.qchip.found { background: var(--mint-soft); border-color: #a9e2cf; color: #1f6f52; }
+.qchip.missing { background: #fff0c9; border-color: #f6dca0; color: #a87a12; }
+.quick-preview small { font-size: 10px; }
+
 /* ---------- tutorial ---------- */
 .hud-brand .tour-replay { margin-left: auto; }
 .hud-brand .tour-replay + .pill { margin-left: 0; }
