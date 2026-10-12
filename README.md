@@ -28,6 +28,7 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | —                             | Level desa: 1 XP per Rp10.000 ditabung + 5 XP per setoran               |
 | —                             | Bangunan level: dermaga (Lv4), pasar (Lv8), mercusuar (Lv15), pulau kedua (Lv25), balon udara (Lv40) |
 | —                             | Lampu jalan streak: satu per hari tercatat (7 hari terakhir); tiap 7 hari beruntun satu warga pindah ke desa |
+| —                             | Musim pulau ikut bulan yang dilihat (hujan, panen, kemarau, mangga) + 📔 jurnal tahun ini "hari ke-N dari 365" |
 
 Level, XP, streak, dan warga dihitung di client dari data yang sudah ada (tidak menambah tabel baru).
 
@@ -53,6 +54,30 @@ Supaya desa punya alasan dibuka setiap hari, bukan hanya saat menabung:
   bulan ini" di halaman Laporan tepira (kalimatnya port dari `buildCyreneInsight`).
 - **Perayaan.** Warga baru dan bangunan yang baru terbuka dirayakan sekali (notifikasi + toast di lokasinya),
   termasuk yang bertambah sejak kunjungan terakhir.
+
+## Jurnal tahun & musim pulau
+
+**Musim** mengikuti bulan yang dilihat (sama seperti cuaca dan kios), jadi ‹ › sekaligus jalan-jalan antar musim. Empat
+musim ala Indonesia (`lib/season.ts`, tampilannya di `components/village/seasons.ts` dan `scene/Seasons.tsx`):
+
+| Bulan   | Musim            | Di pulau                                                                                                   |
+| ------- | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Nov–Feb | 🌧️ Musim hujan   | Rumput paling hijau, kolam penuh, genangan di setapak; gerimis saat berawan/malam, pelangi saat cerah, kunang-kunang saat senja/malam |
+| Mar–Apr | 🌾 Musim panen   | Rumput keemasan, jerami & karung beras di pelataran Balai Desa, kupu-kupu saat siang                      |
+| Mei–Agu | ☀️ Musim kemarau | Rumput & daun menguning, sebagian pohon meranggas, bunga tinggal separuh, kolam surut, layangan; Agustus: bendera merah-putih di lampu jalan |
+| Sep–Okt | 🥭 Musim mangga  | Pohon berbuah mangga, daun berguguran, layangan, sekeranjang mangga di pelataran                         |
+
+- Musim hanya mengubah warna & skala saat render (rumput, mahkota pohon, kolam) plus efek kecil. Tata letak dekorasi,
+  langit/laut/cahaya (milik cuaca skor), dan warna tanda bahaya (rumput liar, kios layu) tidak berubah. Landing tidak ikut.
+- Efek bergerak (hujan, kunang-kunang, daun, kupu-kupu) tidak tampil kalau sistem meminta *kurangi gerakan*; layangan dan
+  bendera diam. Semua efek musim bisa dimatikan di jurnal (`ui.reduceFx`, tersimpan di browser); warna musim tetap.
+
+**📔 Jurnal tahun ini** (panel samping) memakai **hari ini (WIB)**: cincin "Hari ke-286 dari 365", musim sekarang dan
+pergantian berikutnya ("Musim hujan mulai 1 Nov, 19 hari lagi"), pita 12 bulan (klik = pindah ke bulan itu), kalender
+kebiasaan 12×31 dari hari tercatat + tanda nol pengeluaran (hari sebelum mulai mencatat tidak dihitung terlewat), dan
+angka tahun ini: hari tercatat, deret terpanjang & sekarang, goal dibuat, warga, level. Dibuka dari label bulan di kontrol
+atas (emoji musim di atasnya), chip di 🏝️ Perkembangan desa, atau pojok musim di samping Balai Desa. Tanpa query baru:
+datanya `activityDays` (400 hari) yang sudah dikirim untuk lampu streak.
 
 ## Catat cepat
 
@@ -195,6 +220,7 @@ lib/
   quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
   spoken-amount.ts        🎤 bilangan yang diucapkan → angka ("lima belas ribu" → "Rp15.000") sebelum quick-entry
   flow.ts                 aliran uang: gaji/bonus → waduk → kategori, goal, disisihkan, belum terpakai + tata letak pita SVG
+  season.ts               musim per bulan, hari ke-N tahun (WIB), pergantian musim berikutnya, kalender kebiasaan, mixHex
   places.ts               peta jajan: pencocokan tempat, pengelompokan per tempat, warna & ikon kategori, ringkasan
                           sidebar (langganan, pertama kali, tanpa tempat), penggabungan penanda berdekatan,
                           belanja per nama tempat (spendByPlaceName)
@@ -210,16 +236,18 @@ components/village/
   kiosks.ts, usePlaces.ts kios yang berdiri untuk snapshot ini; hook belanja per tempat, status batas, kios
   geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
   speech.ts               🎤 Web Speech (SpeechRecognition id-ID): dukungan browser, hook mendengar, pesan galat
+  seasons.ts              tampilan pulau per musim (warna rumput/daun, kolam, buah), pojok musim, useReducedMotion
   useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
-                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Kiosks (kios langganan)
+                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Kiosks (kios langganan),
+                          Seasons (hujan, pelangi, kunang-kunang, layangan, daun, kupu-kupu, bendera, pojok musim)
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
   map/                    peta jajan: gameStyle (gaya peta desa siang/senja/malam), JajanMap (MapLibre + penanda)
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
                           Surat), JajanView (peta jajan layar penuh), PlaceLimit (editor & petunjuk batas jajan),
                           SalaryPanel, PlacePicker, PinGate, Tutorial, AliranView (aliran uang layar penuh),
-                          VoiceButton (🎤 catat cepat)
+                          VoiceButton (🎤 catat cepat), JournalPanel (📔 jurnal tahun ini)
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
@@ -328,5 +356,5 @@ tidak menangkap klik).
 - Klik bangunan goal → detail goal. Klik peti → dompet. Klik warung → catat pengeluaran. Klik balai desa / si penabung → ringkasan bulan.
 - Klik lampu, warga, bangunan level, atau baris 🔥 di kartu kiri atas → perkembangan desa. Klik kotak pos → surat mingguan.
 - Klik kolam, atau kotak Pengeluaran / Sisa budget di kartu kiri atas → 🌊 aliran uang.
-- ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`).
+- ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`); musim pulau ikut. Klik label bulan → 📔 jurnal.
 - 👁️ / 🙈 untuk menyembunyikan angka (mode privasi), 🪄 cuaca otomatis mengikuti skor kesehatan.
