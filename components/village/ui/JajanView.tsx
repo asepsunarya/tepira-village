@@ -3,9 +3,20 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { expenseCategories } from "@/lib/categories";
-import { MONTHS_ID, formatCompact, monthLabel } from "@/lib/format";
-import { categoryColor, categoryIcon, jajanSummary, shortCategory, spotMatches, type PlaceSpend } from "@/lib/places";
+import { formatCompact, monthLabel, periodWord as periodWordFor } from "@/lib/format";
+import { LIMIT_COLOR, LIMIT_EMOJI, LIMIT_WORD } from "@/lib/place-limits";
+import {
+  categoryColor,
+  categoryIcon,
+  jajanSummary,
+  normalizePlaceName,
+  shortCategory,
+  spotMatches,
+  type PlaceSpend
+} from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
+import { useLimitViews, useMonthPlaceSpend, type LimitView } from "../usePlaces";
+import { PlaceLimitEditor } from "./PlaceLimit";
 import { autoTime } from "../layout";
 import { themeForVillage } from "../map/gameStyle";
 import type { MapFocus, MapPadding } from "../map/JajanMap";
@@ -49,15 +60,42 @@ function Amount({ value }: { value: number }) {
   return <span className={`money ${visible ? "" : "hidden"}`}>{visible ? formatCompact(value) : "••••"}</span>;
 }
 
-function SpotRow({ spot, sub, active, onPick }: { spot: PlaceSpend; sub: string; active: boolean; onPick: () => void }) {
+/** Bilah kecil pemakaian batas; disembunyikan saat angka disembunyikan (lebarnya membocorkan nominal). */
+function LimitBar({ limit }: { limit: LimitView }) {
+  const visible = useMoneyVisible();
+  if (!visible) return null;
   return (
-    <button className={`jv-row ${active ? "on" : ""}`} onClick={onPick} title="Lihat di peta">
+    <span className="bar thin" aria-hidden>
+      <span style={{ width: `${Math.min(100, Math.round(limit.ratio * 100))}%`, background: LIMIT_COLOR[limit.level] }} />
+    </span>
+  );
+}
+
+function SpotRow({
+  spot,
+  sub,
+  active,
+  onPick,
+  limit
+}: {
+  spot: PlaceSpend;
+  sub: string;
+  active: boolean;
+  onPick: () => void;
+  limit?: LimitView;
+}) {
+  return (
+    <button className={`jv-row ${active ? "on" : ""} ${limit?.level ?? ""}`} onClick={onPick} title="Lihat di peta">
       <span className="jv-ico" style={ring(spot.topCategory)}>
         {categoryIcon(spot.topCategory)}
       </span>
       <span className="jv-main">
         <b>{spot.name ?? "Titik tanpa nama"}</b>
-        <small>{sub}</small>
+        <small>
+          {limit && limit.level !== "ok" ? `${LIMIT_EMOJI[limit.level]} ${LIMIT_WORD[limit.level]} · ` : ""}
+          {sub}
+        </small>
+        {limit && <LimitBar limit={limit} />}
       </span>
       <span className="jv-amt">
         <Amount value={spot.total} />
@@ -82,8 +120,14 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
   const narrow = useNarrow();
   const [category, setCategory] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
-  const [focus, setFocus] = useState<MapFocus | null>(null);
+  // Dibuka dari kios: langsung sorot tempatnya (sekali, saat tampilan dibuka).
+  const [selected, setSelected] = useState<string | null>(() => useVillage.getState().jajanFocus);
+  const [focus, setFocus] = useState<MapFocus | null>(() => {
+    const key = useVillage.getState().jajanFocus;
+    if (!key) return null;
+    const known = useVillage.getState().snapshot?.places.find((p) => `n:${normalizePlaceName(p.name)}` === key);
+    return { key, n: 1, lat: known?.lat, lng: known?.lng };
+  });
   const [showAll, setShowAll] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -94,7 +138,8 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // Isian di dalam tampilan (mis. editor batas) boleh menahan Esc untuk dirinya sendiri.
+      if (e.key === "Escape" && !e.defaultPrevented) onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -114,11 +159,13 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
     () => (searching ? summary.spots.filter((s) => spotMatches(s, query)) : summary.spots),
     [summary, query, searching]
   );
+  const limitViews = useLimitViews();
+  const monthSpend = useMonthPlaceSpend();
+  const placeLimits = useVillage((s) => s.placeLimits);
   if (!snapshot) return null;
 
   const { month, year } = snapshot.period;
-  const now = new Date();
-  const periodWord = month === now.getMonth() + 1 && year === now.getFullYear() ? "bulan ini" : `di ${MONTHS_ID[month - 1]}`;
+  const periodWord = periodWordFor(snapshot.period);
   const villageTime = timeSetting === "auto" ? autoTime(snapshot.summary.health.score) : timeSetting;
   const theme = themeSetting === "desa" ? themeForVillage(villageTime) : themeSetting;
   const home = snapshot.places[0] ? { lat: snapshot.places[0].lat, lng: snapshot.places[0].lng } : null;
@@ -129,14 +176,32 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
     setFocus((f) => ({ key: spot.key, n: (f?.n ?? 0) + 1 }));
   };
   const row = (spot: PlaceSpend, sub: string) => (
-    <SpotRow key={spot.key} spot={spot} sub={sub} active={selected === spot.key} onPick={() => pick(spot)} />
+    <SpotRow
+      key={spot.key}
+      spot={spot}
+      sub={sub}
+      active={selected === spot.key}
+      onPick={() => pick(spot)}
+      limit={limitViews.get(spot.key)}
+    />
   );
+  // Kartu tempat terpilih (hanya tempat bernama: batas jajan berlaku per nama).
+  const selectedNorm = selected?.startsWith("n:") ? selected.slice(2) : null;
+  const selectedSpot = selected ? summary.spots.find((s) => s.key === selected) ?? all.spots.find((s) => s.key === selected) : undefined;
+  const selectedMonth = selectedNorm ? monthSpend.get(selectedNorm) : undefined;
+  const selectedKnown = selectedNorm ? snapshot.places.find((p) => normalizePlaceName(p.name) === selectedNorm) : undefined;
+  const selectedName =
+    selectedNorm &&
+    (selectedMonth?.name ?? selectedSpot?.name ?? selectedKnown?.name ?? placeLimits[selectedNorm]?.name ?? null);
+  const selectedLimit = selected ? limitViews.get(selected) : undefined;
+  const selectedCategory = selectedMonth?.topCategory ?? selectedSpot?.topCategory ?? null;
   const detail = (s: PlaceSpend) => `${s.count} catatan · ${s.topCategory ? shortCategory(s.topCategory) : "Lainnya"}`;
 
   return (
     <div className={`jajan-view theme-${theme}`}>
       <JajanMap
         spots={visible}
+        limits={limitViews}
         focus={focus}
         selected={selected}
         onSelect={setSelected}
@@ -181,6 +246,43 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
               </small>
             )}
           </section>
+
+          {selectedNorm && selectedName && (
+            <section className="jv-place" data-place={selectedNorm}>
+              <div className="jv-place-head">
+                <span className="jv-ico" style={ring(selectedCategory)}>
+                  {categoryIcon(selectedCategory)}
+                </span>
+                <span className="jv-main">
+                  <b>{selectedName}</b>
+                  <small>
+                    {selectedMonth ? (
+                      <>
+                        {selectedMonth.visits}× ke sini {periodWord} · <Amount value={selectedMonth.total} />
+                      </>
+                    ) : (
+                      <>Belum ada jajan di sini {periodWord}.</>
+                    )}
+                  </small>
+                </span>
+                <button className="icon-btn small" onClick={() => setSelected(null)} title="Tutup kartu tempat" aria-label="Tutup kartu tempat">
+                  ✕
+                </button>
+              </div>
+              {selectedLimit && (
+                <>
+                  <LimitBar limit={selectedLimit} />
+                  <p className={`cat-hint ${selectedLimit.level}`}>
+                    {LIMIT_EMOJI[selectedLimit.level]} {LIMIT_WORD[selectedLimit.level]} · <Amount value={selectedLimit.spent} /> dari batas{" "}
+                    <Amount value={selectedLimit.limit} /> {periodWord}
+                  </p>
+                </>
+              )}
+              {!selectedSpot && !selectedKnown && <small className="muted">Tempat ini belum punya titik di peta.</small>}
+              {/* key per tempat: isian yang sedang terbuka tidak terbawa ke tempat lain */}
+              <PlaceLimitEditor key={selectedNorm} name={selectedName} />
+            </section>
+          )}
 
           <label className="jv-search">
             <span aria-hidden>🔎</span>

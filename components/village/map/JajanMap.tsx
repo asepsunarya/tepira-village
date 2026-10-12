@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { LngLatBounds, Map as MapLibreMap, Marker, Popup, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { formatCompact } from "@/lib/format";
+import { LIMIT_EMOJI, LIMIT_RANK, LIMIT_WORD, type LimitLevel } from "@/lib/place-limits";
 import { categoryColor, categoryIcon, groupNearby, shortCategory, type PlaceSpend } from "@/lib/places";
+import type { LimitView } from "../usePlaces";
 import { currentPosition } from "../geo";
 import type { MapThemeSetting } from "../types";
 import { PALETTES, applyGameTheme, buildGameStyle, type MapTheme } from "./gameStyle";
@@ -38,6 +40,22 @@ export interface MapFocus {
   key: string;
   /** naik tiap klik, supaya memilih tempat yang sama dua kali tetap terbang ke sana */
   n: number;
+  /** titik cadangan kalau tempatnya tidak punya penanda bulan ini (mis. dibuka dari kios) */
+  lat?: number;
+  lng?: number;
+}
+
+type LimitMap = ReadonlyMap<string, LimitView>;
+const NO_LIMIT_VIEWS: LimitMap = new Map();
+
+/** Level batas terburuk di sebuah kelompok penanda (null = tidak ada yang punya batas). */
+function worstLevel(members: readonly PlaceSpend[], limits: LimitMap): LimitLevel | null {
+  let worst: LimitLevel | null = null;
+  for (const m of members) {
+    const level = limits.get(m.key)?.level;
+    if (level && (!worst || LIMIT_RANK[level] > LIMIT_RANK[worst])) worst = level;
+  }
+  return worst;
 }
 
 export interface MapPadding {
@@ -58,10 +76,12 @@ interface PinGroup {
 const money = (value: number, hide: boolean) => (hide ? "••••" : formatCompact(value));
 
 /** Penanda ala peta game: lingkaran putih bercincin warna kategori, ikon, jumlah catatan, nominal. */
-function pinElement(g: PinGroup, hideMoney: boolean, selected: boolean) {
+function pinElement(g: PinGroup, hideMoney: boolean, selected: boolean, level: LimitLevel | null) {
   const root = document.createElement("button");
   root.type = "button";
-  root.className = `jm-pin${g.members.length > 1 ? " group" : ""}${selected ? " on" : ""}`;
+  root.className = `jm-pin${g.members.length > 1 ? " group" : ""}${selected ? " on" : ""}${
+    level === "warn" || level === "over" ? ` lim-${level}` : ""
+  }`;
   root.style.setProperty("--ring", categoryColor(g.lead.topCategory));
   root.title =
     g.members.length > 1 ? `${g.members.length} tempat berdekatan` : (g.lead.name ?? "Titik tanpa nama");
@@ -82,7 +102,7 @@ function pinElement(g: PinGroup, hideMoney: boolean, selected: boolean) {
 }
 
 /** Isi popup dirakit lewat DOM (bukan HTML) karena nama tempat adalah ketikan user. */
-function popupNode(spots: readonly PlaceSpend[], hideMoney: boolean) {
+function popupNode(spots: readonly PlaceSpend[], hideMoney: boolean, limits: LimitMap) {
   const root = document.createElement("div");
   root.className = "jajan-popup";
   for (const spot of spots) {
@@ -97,6 +117,13 @@ function popupNode(spots: readonly PlaceSpend[], hideMoney: boolean) {
       const category = document.createElement("small");
       category.textContent = shortCategory(spot.topCategory);
       row.append(category);
+    }
+    const limit = limits.get(spot.key);
+    if (limit) {
+      const line = document.createElement("span");
+      line.className = `jp-limit ${limit.level}`;
+      line.textContent = `${LIMIT_EMOJI[limit.level]} ${LIMIT_WORD[limit.level]} · ${money(limit.spent, hideMoney)} dari batas ${money(limit.limit, hideMoney)}`;
+      row.append(line);
     }
     root.append(row);
   }
@@ -122,12 +149,13 @@ function openPopup(
   list: readonly PlaceSpend[],
   key: string | null,
   hideMoney: boolean,
+  limits: LimitMap,
   onUserClose: () => void
 ) {
   closePopup(state);
   const p = new Popup({ anchor: "bottom", offset: [0, -30], closeButton: false, maxWidth: "260px", className: "jm-popup" })
     .setLngLat([list[0].lng, list[0].lat])
-    .setDOMContent(popupNode(list, hideMoney))
+    .setDOMContent(popupNode(list, hideMoney, limits))
     .addTo(map);
   // Ditutup user (klik peta / penanda lain): beri tahu induk. Penutupan dari kode tidak dihitung.
   p.on("close", () => {
@@ -168,6 +196,7 @@ function fitSpots(map: MapLibreMap, spots: readonly PlaceSpend[], duration = 700
  */
 export default function JajanMap({
   spots,
+  limits = NO_LIMIT_VIEWS,
   focus,
   selected,
   onSelect,
@@ -179,6 +208,8 @@ export default function JajanMap({
   padding
 }: {
   spots: readonly PlaceSpend[];
+  /** status batas jajan per kunci titik */
+  limits?: LimitMap;
   focus: MapFocus | null;
   selected: string | null;
   onSelect: (key: string | null) => void;
@@ -202,8 +233,8 @@ export default function JajanMap({
   const drawn = useRef("");
   const popup = useRef<PopupState>({ popup: null, key: null });
   const me = useRef<Marker | null>(null);
-  const latest = useRef({ spots, hideMoney, selected, onSelect, padding });
-  latest.current = { spots, hideMoney, selected, onSelect, padding };
+  const latest = useRef({ spots, limits, hideMoney, selected, onSelect, padding });
+  latest.current = { spots, limits, hideMoney, selected, onSelect, padding };
   const initial = useRef({ home, theme });
 
   /** Susun ulang penanda: kelompokkan per jarak di layar; dilewati kalau hasilnya sama. */
@@ -211,7 +242,7 @@ export default function JajanMap({
   draw.current = () => {
     const map = mapRef.current;
     if (!map) return;
-    const { spots: list, hideMoney: hide, selected: sel } = latest.current;
+    const { spots: list, limits: lim, hideMoney: hide, selected: sel } = latest.current;
     const points = list.map((s) => {
       const p = map.project([s.lng, s.lat]);
       return { x: p.x, y: p.y * GROUP_SQUASH_Y };
@@ -232,7 +263,11 @@ export default function JajanMap({
     // Ikut isi yang digambar (nominal, jumlah, kategori, titik), bukan hanya kunci: ganti bulan atau
     // kategori bisa menghasilkan tempat & urutan yang sama dengan angka berbeda.
     const signature = `${hide}|${sel}|${groups
-      .map((g) => g.members.map((m) => `${m.key}:${m.total}:${m.count}:${m.topCategory}:${m.lat},${m.lng}`).join("+"))
+      .map((g) =>
+        g.members
+          .map((m) => `${m.key}:${m.total}:${m.count}:${m.topCategory}:${m.lat},${m.lng}:${lim.get(m.key)?.level ?? ""}`)
+          .join("+")
+      )
       .join(",")}`;
     if (signature === drawn.current) return;
     drawn.current = signature;
@@ -240,7 +275,7 @@ export default function JajanMap({
     // Yang terbesar ditambahkan terakhir supaya berada di atas saat bersinggungan.
     markers.current = groups.reverse().map((g) => {
       const isSelected = g.members.some((m) => m.key === sel);
-      const node = pinElement(g, hide, isSelected);
+      const node = pinElement(g, hide, isSelected, worstLevel(g.members, lim));
       node.addEventListener("click", (event) => {
         event.stopPropagation();
         if (g.members.length > 1 && map.getZoom() < ZOOM_MAX_SPLIT) {
@@ -250,7 +285,10 @@ export default function JajanMap({
         } else if (g.members.length > 1) {
           // Masih menumpuk di zoom terdekat (mis. satu gedung): tampilkan daftarnya.
           latest.current.onSelect(null);
-          openPopup(map, popup.current, g.members, null, hide, () => latest.current.onSelect(null));
+          // Nilai terbaru, bukan salinan saat penanda digambar (batas bisa diubah tanpa mengubah levelnya).
+          const now = latest.current;
+          const fresh = g.members.map((m) => now.spots.find((s) => s.key === m.key) ?? m);
+          openPopup(map, popup.current, fresh, null, now.hideMoney, now.limits, () => latest.current.onSelect(null));
         } else {
           latest.current.onSelect(g.lead.key);
         }
@@ -321,23 +359,26 @@ export default function JajanMap({
   // (Bukan di efek pilihan di bawah, karena daftar itu dibuka tepat saat pilihan dilepas.)
   useEffect(() => {
     if (popup.current.key === null) closePopup(popup.current);
-  }, [spots, hideMoney]);
+  }, [spots, hideMoney, limits]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
     draw.current();
     const spot = selected ? spots.find((s) => s.key === selected) : null;
-    if (spot) openPopup(map, popup.current, [spot], spot.key, hideMoney, () => latest.current.onSelect(null));
+    if (spot) openPopup(map, popup.current, [spot], spot.key, hideMoney, limits, () => latest.current.onSelect(null));
     // Daftar penanda gabungan (key null) dibiarkan: dibuka tepat saat pilihan dilepas.
     else if (popup.current.key !== null) closePopup(popup.current);
-  }, [ready, selected, spots, hideMoney]);
+  }, [ready, selected, spots, hideMoney, limits]);
 
   useEffect(() => {
     const map = mapRef.current;
-    const spot = focus && latest.current.spots.find((s) => s.key === focus.key);
-    if (!ready || !map || !spot) return;
-    map.flyTo({ center: [spot.lng, spot.lat], zoom: Math.max(map.getZoom(), 16), duration: 900 });
+    if (!ready || !map || !focus) return;
+    const spot = latest.current.spots.find((s) => s.key === focus.key);
+    // Tempat tanpa penanda bulan ini (dibuka dari kios): pakai titik terakhir yang dikenal.
+    const at = spot ? { lat: spot.lat, lng: spot.lng } : focus.lat !== undefined && focus.lng !== undefined ? { lat: focus.lat, lng: focus.lng } : null;
+    if (!at) return;
+    map.flyTo({ center: [at.lng, at.lat], zoom: Math.max(map.getZoom(), 16), duration: 900 });
   }, [ready, focus]);
 
   const say = (text: string) => {

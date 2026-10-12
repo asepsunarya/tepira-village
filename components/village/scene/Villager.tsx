@@ -21,6 +21,8 @@ interface Runtime {
   errandKind: "save" | "spend" | "idle";
   celebrate: number;
   lastNonce: number;
+  /** arah hadap saat tiba di tujuan errand */
+  faceYaw: number;
 }
 
 const SPEED = 2.6;
@@ -47,7 +49,8 @@ export default function Villager() {
       mode: "wander",
       errandKind: "idle",
       celebrate: 0,
-      lastNonce: 0
+      lastNonce: 0,
+      faceYaw: Math.PI
     };
   }
 
@@ -59,6 +62,7 @@ export default function Villager() {
     r.errandKind = target.kind;
     r.tx = target.x;
     r.tz = target.z;
+    r.faceYaw = target.yaw ?? Math.PI;
     r.wait = 0;
     r.arrived = false;
   }, [target]);
@@ -98,7 +102,7 @@ export default function Villager() {
       r.arrived = true;
       if (r.mode === "errand") {
         r.wait = 3.2;
-        r.yaw = Math.PI; // menghadap bangunan
+        r.yaw = r.faceYaw; // menghadap bangunan / kios
         if (r.errandKind === "save") r.celebrate = 2.4;
       } else {
         r.wait = 1.5 + Math.random() * 3.5;

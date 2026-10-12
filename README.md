@@ -114,6 +114,25 @@ dimuat hanya saat peta dibuka; worker-nya disalin webpack sebagai aset (`setWork
 
 Untuk DB lokal cukup `npm run db:push:dev` lagi.
 
+### Kios tempat langganan & batas jajan per tempat
+
+- **Kios di pulau.** Tempat yang dicatat minimal 2× setahun terakhir, atau yang punya batas jajan, berdiri sebagai kios
+  kecil di pulau. Maksimal 8: lima di "jalan jajan" dekat warung, tiga di sudut barat laut (`KIOSK_SPOTS` di
+  `layout.ts`).
+  - Slot tiap kios diambil dari hash namanya (`lib/kiosks.ts`), jadi kios tidak berpindah saat urutan berubah.
+  - Kios mengikuti bulan yang dilihat: makin ramai sesuai jumlah kunjungan (pembeli, bendera, lampu).
+  - Bendera kuning berarti hampir batas. Kios yang lewat batas tutup: rana turun, warnanya pudar, tanamannya layu.
+  - Klik kios untuk membuka peta jajan yang langsung menyorot tempat itu. Si penabung juga berjalan ke kios saat
+    kamu mencatat di sana.
+- **Batas jajan per tempat.** Atur lewat kartu tempat di peta jajan (🎯 Atur batas jajan).
+  - Batasnya berlaku per bulan kalender, untuk semua kategori. Status "hampir batas" mulai 80%; lewat dari batas
+    berarti "lewat batas".
+  - Statusnya tampil di penanda peta, baris sidebar, label kios, panel Bulan ini, dan catat cepat. Contoh:
+    chip 📍 berubah kuning/merah dan muncul "nominal ini bikin lewat".
+  - Saat sebuah catatan menaikkan statusnya, muncul pemberitahuan tanpa menyebut nominal.
+- **Penyimpanan.** Batas disimpan per user di `localStorage` (`daily.ts`, kunci `tepira-village-placelimits:v1:<email>`).
+  Batas belum ikut ke perangkat lain dan tidak butuh migrasi. Sinkronisasi nanti butuh tabel baru di repo tepira.
+
 Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server hanya
 mengirim daftar hari yang punya catatan (`activityDays`, 400 hari terakhir). Tanda nol pengeluaran (hari ini dan
 2 hari sebelumnya), surat yang sudah dibuka, dan warga/level yang sudah dirayakan disimpan per user di
@@ -135,22 +154,28 @@ lib/
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
   quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
   places.ts               peta jajan: pencocokan tempat, pengelompokan per tempat, warna & ikon kategori, ringkasan
-                          sidebar (langganan, pertama kali, tanpa tempat), penggabungan penanda berdekatan
+                          sidebar (langganan, pertama kali, tanpa tempat), penggabungan penanda berdekatan,
+                          belanja per nama tempat (spendByPlaceName)
+  place-limits.ts         batas jajan per tempat: parse/simpan, status aman/hampir/lewat
+  kiosks.ts               pemilihan kios tempat langganan, slot stabil (hash), keramaian
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
 components/village/
   store.ts                zustand: snapshot dari server + preferensi visual (localStorage)
-  daily.ts                localStorage per user: tanda nol pengeluaran, surat terbaca, perayaan yang sudah tampil
+  daily.ts                localStorage per user: tanda nol pengeluaran, surat terbaca, perayaan yang sudah tampil,
+                          batas jajan per tempat
+  kiosks.ts, usePlaces.ts kios yang berdiri untuk snapshot ini; hook belanja per tempat, status batas, kios
   geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
   useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
-                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox
+                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Kiosks (kios langganan)
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
   map/                    peta jajan: gameStyle (gaya peta desa siang/senja/malam), JajanMap (MapLibre + penanda)
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
-                          Surat), JajanView (peta jajan layar penuh), SalaryPanel, PlacePicker, PinGate, Tutorial
+                          Surat), JajanView (peta jajan layar penuh), PlaceLimit (editor & petunjuk batas jajan),
+                          SalaryPanel, PlacePicker, PinGate, Tutorial
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)

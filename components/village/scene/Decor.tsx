@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { BRIDGE, DOCK, GOAL_PLOTS, HALL, LAMP_POSTS, LIGHTHOUSE, MARKET, POND, WALLET_ROW, WARUNG } from "../layout";
+import { BRIDGE, DOCK, GOAL_PLOTS, HALL, KIOSK_SPOTS, LAMP_POSTS, LIGHTHOUSE, MARKET, POND, WALLET_ROW, WARUNG } from "../layout";
 import { distToPath, insideIsland, mulberry32 } from "./geometry";
 
 type Kind = "tree" | "pine" | "candy" | "bush" | "mushroom" | "flower" | "rock";
@@ -40,6 +40,8 @@ function makeClear(usedPlots: number, walletCount: number, reserved: boolean) {
     if (Math.hypot(LIGHTHOUSE.x - x, LIGHTHOUSE.z - z) < 2.4 + pad) return false;
     if (Math.hypot(DOCK.x - x, DOCK.z - z) < 2.2 + pad) return false;
     if (Math.abs(BRIDGE.x - x) < 1.6 + pad && z > BRIDGE.z0 - 1.8 - pad) return false;
+    // Kedelapan titik kios selalu dikosongkan, berapa pun kios yang sedang berdiri.
+    if (KIOSK_SPOTS.some((k) => Math.hypot(k.x - x, k.z - z) < 2 + pad)) return false;
     return true;
   };
 }

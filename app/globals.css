@@ -156,6 +156,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .bar { height: 8px; background: #f3e8ee; border-radius: 999px; overflow: hidden; margin-top: 6px; }
 .bar.thin { height: 6px; margin-top: 2px; }
 .bar > div { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
+.bar > span { display: block; height: 100%; border-radius: 999px; transition: width 0.6s ease; }
 
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .detail-grid.three { grid-template-columns: 1fr 1fr 1fr; }
@@ -201,6 +202,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 
 .cat-row { display: flex; flex-direction: column; gap: 2px; background: #fff; border-radius: 12px; padding: 8px 10px; border: 2px solid #f6ebf0; }
 .cat-head { display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; }
+.limit-row { width: 100%; text-align: left; cursor: pointer; transition: border-color 0.15s; }
+.limit-row:hover { border-color: #ffbdd8; }
+.limit-row.warn { border-color: #f6dca0; }
+.limit-row.over { border-color: #ffd0d0; }
+.limit-row .cat-head small { margin-left: 4px; font-size: 10px; }
+.limit-row .bar { display: block; }
 
 .score-card { display: flex; gap: 12px; align-items: center; background: #fff; border-radius: 16px; padding: 12px; border: 2px solid #f6ebf0; }
 .score-card b { font-size: 15px; font-weight: 900; }
@@ -401,6 +408,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .pace-note.behind { border-color: #e3e7bd; background: #fbfcf2; }
 .deadline-open { align-self: flex-start; }
 .deadline-form { background: #fff; border-radius: 12px; padding: 10px; border: 2px solid #f1e4ea; }
+.limit-form small { font-size: 11px; }
 .goal-label-pace { margin-top: 3px; font-size: 10px; font-weight: 900; }
 .goal-label-pace.ok { color: #1f8a63; }
 .goal-label-pace.behind { color: #6f7d2e; }
@@ -425,6 +433,15 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 
 .streak-pill { box-shadow: 0 3px 10px rgba(243, 195, 91, 0.45), inset 0 0 0 1.5px #f6dca0; animation: popIn 0.25s ease-out; }
 .streak-pill .lv { background: #fff0c9; color: #a87a12; }
+/* kios tempat langganan: label kecil supaya tidak berebut tempat dengan kartu warung/goal */
+.kiosk-pill { font-size: 10px; padding: 2px 8px 2px 6px; gap: 4px; }
+.kiosk-pill .kiosk-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.world-label.is-hover { z-index: 2; }
+.kiosk-pill.open { box-shadow: 0 0 0 2px var(--pink), 0 3px 10px rgba(120, 60, 100, 0.25); }
+.kiosk-pill.warn { box-shadow: 0 3px 10px rgba(243, 195, 91, 0.45), inset 0 0 0 1.5px #f6dca0; }
+.kiosk-pill.warn .lv { color: #a87a12; }
+.kiosk-pill.over { box-shadow: 0 3px 10px rgba(232, 109, 109, 0.35), inset 0 0 0 1.5px #ffc9c9; }
+.kiosk-pill.over .lv { color: #c23b3b; }
 .mail-pill { box-shadow: 0 3px 10px rgba(240, 160, 106, 0.45), inset 0 0 0 1.5px #ffd2b3; animation: popIn 0.25s ease-out; }
 .sign-pill { background: rgba(255, 250, 240, 0.92); color: var(--ink-soft); }
 
@@ -458,6 +475,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .jm-pin.group .jm-pin-body::before { content: ""; position: absolute; inset: -3px; z-index: -1; border-radius: 50%; background: #fff; border: 3px solid var(--ring); transform: translate(7px, -6px); }
 .jm-pin-badge { position: absolute; top: -8px; right: -10px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center; background: var(--pink); color: #fff; font-size: 11px; font-weight: 900; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(120, 60, 100, 0.3); }
 .jm-pin-amount { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.96); color: var(--ink); font-size: 11px; font-weight: 900; white-space: nowrap; box-shadow: 0 3px 8px rgba(60, 40, 70, 0.2); }
+/* batas jajan di penanda: lencana kuning (hampir) / merah (lewat) */
+.jm-pin.lim-warn .jm-pin-badge { background: #e0b84a; }
+.jm-pin.lim-over .jm-pin-badge { background: var(--red); }
+.jm-pin.lim-over .jm-pin-amount { color: #c23b3b; }
+.theme-malam .jm-pin.lim-over .jm-pin-amount { color: #ffb4b4; }
 .jm-pin:hover .jm-pin-body { transform: translateY(-2px) scale(1.06); }
 .jm-pin.on .jm-pin-body { transform: scale(1.14); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.95), 0 0 0 7px var(--ring), 0 8px 18px rgba(60, 40, 70, 0.3); }
 .jm-pin.on .jm-pin-amount { background: var(--ink); color: #fff; }
@@ -473,6 +495,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .jajan-popup b { font-size: 13px; font-weight: 900; }
 .jajan-popup span { font-size: 12px; font-weight: 800; }
 .jajan-popup small { font-size: 11px; font-weight: 700; color: var(--ink-soft); }
+.jajan-popup .jp-limit { font-size: 11px; }
+.jajan-popup .jp-limit.warn { color: #a87a12; }
+.jajan-popup .jp-limit.over { color: #c23b3b; }
 
 /* Sidebar ala Peta Oyen */
 .jv-side { position: absolute; top: 16px; left: 16px; bottom: 16px; z-index: 2; width: 380px; display: flex; flex-direction: column; overflow: hidden; background: rgba(255, 250, 247, 0.96); animation: popIn 0.2s ease-out; }
@@ -502,6 +527,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .jv-list { display: flex; flex-direction: column; gap: 6px; }
 .jv-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left; background: #fff; border: 2px solid #f6ebf0; border-radius: 14px; font-size: 13px; font-weight: 700; transition: border-color 0.15s, transform 0.15s; }
 button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
+.jv-row.warn { border-color: #f6dca0; }
+.jv-row.over { border-color: #ffd0d0; }
+.jv-main .bar.thin { display: block; margin-top: 4px; }
 .jv-row.on { border-color: var(--pink); box-shadow: 0 0 0 2px var(--pink-soft); }
 .jv-ico { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; font-size: 17px; background: #fff; border: 3px solid var(--ring, #f1e4ea); }
 .jv-ico.plain { background: #f8f0f4; border-color: #f1e4ea; }
@@ -516,6 +544,11 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
 .jv-card b { min-height: 2.5em; font-size: 12px; font-weight: 900; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .jv-card small { font-size: 12px; font-weight: 900; }
 .jv-note { margin: 2px 4px 0; font-size: 11px; font-weight: 700; color: var(--ink-soft); }
+/* kartu tempat terpilih: kunjungan, status & editor batas jajan */
+.jv-body section.jv-place { gap: 6px; padding: 10px 12px; border-radius: 16px; background: #fff; border: 2px solid #ffbdd8; box-shadow: 0 3px 0 #f6dfe8; }
+.jv-place-head { display: flex; align-items: center; gap: 10px; }
+.jv-place .cat-hint { margin: 0 2px; }
+.jv-place .deadline-form { border-color: #f6ebf0; }
 .jajan-empty { display: flex; flex-direction: column; gap: 6px; background: #fff; border-radius: 14px; padding: 12px; border: 2px dashed #f1e4ea; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
 .jajan-empty b { color: var(--ink); }
 
@@ -552,6 +585,8 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
 .qchip { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: #fff; border: 1.5px solid #f1e4ea; color: var(--ink-soft); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .qchip.found { background: var(--mint-soft); border-color: #a9e2cf; color: #1f6f52; }
 .qchip.missing { background: #fff0c9; border-color: #f6dca0; color: #a87a12; }
+.qchip.warn { background: #fff0c9; border-color: #f6dca0; color: #a87a12; }
+.qchip.over { background: #ffdede; border-color: #ffc9c9; color: #c23b3b; }
 .quick-preview small { font-size: 10px; }
 
 /* ---------- tutorial ---------- */

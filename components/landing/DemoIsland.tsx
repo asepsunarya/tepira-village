@@ -6,6 +6,7 @@ import type { GoalView, WalletView } from "@/lib/game";
 import { buildStage, levelFor, villageXp } from "@/lib/game";
 import { formatCompact } from "@/lib/format";
 import { createDemoSnapshot, isDemoSnapshot, withDemoContribution } from "@/lib/demo-snapshot";
+import { NO_LIMITS } from "@/lib/place-limits";
 import { TIME_PRESETS, autoTime, goalPalette, goalPlot } from "@/components/village/layout";
 import { useVillage } from "@/components/village/store";
 import Island from "@/components/village/scene/Island";
@@ -37,7 +38,9 @@ const clean = () => ({
   selectedWalletId: null,
   toasts: [],
   villagerTarget: null,
-  celebrateGoalId: null
+  celebrateGoalId: null,
+  jajanFocus: null,
+  placeLimits: NO_LIMITS
 });
 
 /** Urutan goal yang "dibangun" demo (indeks kavling): Laptop → Sepeda → Dana darurat. */

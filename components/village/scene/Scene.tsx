@@ -17,6 +17,7 @@ import StreetLamps from "./StreetLamps";
 import Townsfolk from "./Townsfolk";
 import Unlocks from "./Unlocks";
 import Mailbox from "./Mailbox";
+import Kiosks from "./Kiosks";
 import { Clouds } from "./Effects";
 import LabelProjector from "./LabelProjector";
 
@@ -120,6 +121,7 @@ export default function Scene() {
       <StreetLamps night={p.windows} />
       <Mailbox />
       <Unlocks night={p.windows} />
+      <Kiosks lit={p.windows} />
       <Villager />
       <Townsfolk />
       <LabelProjector />

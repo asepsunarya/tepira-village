@@ -122,6 +122,63 @@ export function spendingByPlace(expenses: readonly ExpenseView[]): PlaceSpend[] 
     .sort((a, b) => b.total - a.total);
 }
 
+/** Kunci tempat bernama di peta (sama dengan placeKey untuk catatan yang punya nama). */
+export const spotKeyFor = (name: string) => `n:${normalizePlaceName(name)}`;
+
+export interface PlaceMonthSpend {
+  /** normalizePlaceName(nama) */
+  key: string;
+  /** ejaan dari catatan terbaru */
+  name: string;
+  total: number;
+  count: number;
+  /** hari WIB berbeda */
+  visits: number;
+  topCategory: string | null;
+}
+
+/**
+ * Belanja per nama tempat (semua kategori), dasar batas jajan dan kios. Berbeda dengan
+ * spendingByPlace, catatan yang punya nama tapi tanpa titik ikut dihitung; yang tanpa nama dilewati.
+ */
+export function spendByPlaceName(expenses: readonly ExpenseView[]): Map<string, PlaceMonthSpend> {
+  const groups = new Map<
+    string,
+    Omit<PlaceMonthSpend, "visits" | "topCategory"> & { latest: string; days: Set<number>; byCategory: Map<string, number> }
+  >();
+  for (const e of expenses) {
+    const name = e.placeName?.trim().replace(/\s+/g, " ");
+    if (!name) continue;
+    const key = normalizePlaceName(name);
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, name, total: 0, count: 0, latest: e.date, days: new Set(), byCategory: new Map() };
+      groups.set(key, g);
+    }
+    g.total += e.amount;
+    g.count++;
+    g.days.add(wibDay(e.date));
+    const category = e.category || "Lainnya";
+    g.byCategory.set(category, (g.byCategory.get(category) ?? 0) + e.amount);
+    if (e.date > g.latest) {
+      g.latest = e.date;
+      g.name = name;
+    }
+  }
+  const out = new Map<string, PlaceMonthSpend>();
+  for (const g of groups.values()) {
+    out.set(g.key, {
+      key: g.key,
+      name: g.name,
+      total: g.total,
+      count: g.count,
+      visits: g.days.size,
+      topCategory: [...g.byCategory.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+    });
+  }
+  return out;
+}
+
 /** Warna titik di peta per kategori tepira (senada dengan palet desa). */
 const CATEGORY_COLORS: Record<ExpenseCategoryKey, string> = {
   makan_harian: "#f0a06a",

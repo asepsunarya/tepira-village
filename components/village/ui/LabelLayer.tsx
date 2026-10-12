@@ -13,6 +13,9 @@ import {
   type GoalPace
 } from "@/lib/game";
 import { formatCompact } from "@/lib/format";
+import { LIMIT_EMOJI } from "@/lib/place-limits";
+import { categoryIcon } from "@/lib/places";
+import { useKiosks } from "../usePlaces";
 import { HALL, LAMP_POSTS, MAILBOX, UNLOCK_SPOTS, WARUNG, goalPalette, goalPlot, walletSpot } from "../layout";
 import { useMoneyVisible, useVillage } from "../store";
 import { useLetter, useStreak, useVillageXp } from "../useProgress";
@@ -22,16 +25,18 @@ function WorldLabel({
   id,
   position,
   anchor = "above",
+  className = "",
   children
 }: {
   id: string;
   position: [number, number, number];
   anchor?: Anchor;
+  className?: string;
   children: ReactNode;
 }) {
   const ref = useWorldLabel(id, position, anchor);
   return (
-    <div ref={ref} className="world-label" style={{ display: "none" }}>
+    <div ref={ref} className={`world-label ${className}`} style={{ display: "none" }}>
       {children}
     </div>
   );
@@ -252,6 +257,43 @@ function NextUnlockLabel() {
   );
 }
 
+/**
+ * Label kios: ringkas (ikon + kunjungan atau status batas) supaya delapan kios di jalan jajan tidak
+ * saling menumpuk; nama tempat muncul saat kiosnya disorot kursor. Persentase hanya saat angka terlihat.
+ */
+function KioskLabels() {
+  const kiosks = useKiosks();
+  const moneyVisible = useMoneyVisible();
+  const hover = useVillage((s) => s.hoverKiosk);
+  return (
+    <>
+      {kiosks.map((k) => {
+        const level = k.status?.level ?? null;
+        const open = hover === k.key;
+        return (
+          <WorldLabel
+            key={k.key}
+            id={`kiosk-${k.key}`}
+            position={[k.spot.x, k.spot.label === "below" ? 0.1 : 2.35, k.spot.z]}
+            anchor={k.spot.label === "below" ? "below" : "above"}
+            className={open ? "is-hover" : ""}
+          >
+            <div className={`name-pill kiosk-pill ${level ?? ""} ${open ? "open" : ""}`} data-kiosk={k.key} data-slot={k.slot}>
+              <span className="name-emoji">{categoryIcon(k.topCategory)}</span>
+              {open && <span className="kiosk-name">{k.name}</span>}
+              <span className="lv">
+                {level && k.status
+                  ? `${LIMIT_EMOJI[level]}${moneyVisible ? ` ${Math.round(k.status.ratio * 100)}%` : ""}`
+                  : `${k.monthVisits}×`}
+              </span>
+            </div>
+          </WorldLabel>
+        );
+      })}
+    </>
+  );
+}
+
 function ToastLabels() {
   const moneyVisible = useMoneyVisible();
   const toasts = useVillage((s) => s.toasts);
@@ -278,6 +320,8 @@ export default function LabelLayer() {
     <div className="label-layer" aria-hidden>
       {showLabels && (
         <>
+          {/* Paling awal supaya label kios yang kecil tertutup kartu warung/goal kalau bertumpuk. */}
+          <KioskLabels />
           <GoalLabels />
           <WalletLabels />
           <WarungLabel />

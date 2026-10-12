@@ -14,9 +14,32 @@ import {
 import type { ActionResult, Snapshot } from "@/lib/game";
 import * as actions from "@/app/village/actions";
 import type { MapThemeSetting, Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
-import { HALL, LAMP_POSTS, UNLOCK_SPOTS, WARUNG, goalPlot } from "./layout";
-import { formatCompact } from "@/lib/format";
-import { readLetter, readNoSpend, readSeen, writeLetter, writeNoSpend, writeSeen } from "./daily";
+import { HALL, LAMP_POSTS, UNLOCK_SPOTS, WARUNG, goalPlot, kioskFront } from "./layout";
+import { formatCompact, periodWord } from "@/lib/format";
+import { isDemoSnapshot } from "@/lib/demo-snapshot";
+import { normalizePlaceName, spendByPlaceName, spotKeyFor } from "@/lib/places";
+import {
+  LIMIT_EMOJI,
+  LIMIT_RANK,
+  LIMIT_WORD,
+  NO_LIMITS,
+  findPlaceLimit,
+  limitStatus,
+  withPlaceLimit,
+  type PlaceLimits
+} from "@/lib/place-limits";
+import {
+  PLACE_LIMITS_PREFIX,
+  readLetter,
+  readNoSpend,
+  readPlaceLimits,
+  readSeen,
+  writeLetter,
+  writeNoSpend,
+  writePlaceLimits,
+  writeSeen
+} from "./daily";
+import { placedKiosks } from "./kiosks";
 import {
   NO_HITS,
   captureBaseline,
@@ -70,6 +93,12 @@ interface State {
   noSpendDays: number[];
   /** Kunci surat terakhir yang sudah dibuka (letterKey di daily.ts). */
   letterRead: string | null;
+  /** Batas jajan per tempat milik user yang login; disimpan di browser (daily.ts). */
+  placeLimits: PlaceLimits;
+  /** Tempat yang disorot saat peta jajan dibuka (kunci titik `n:<nama>`), mis. dari klik kios. */
+  jajanFocus: string | null;
+  /** Kios yang sedang disorot kursor (labelnya melebar menampilkan nama). */
+  hoverKiosk: string | null;
 
   hydrate: (snapshot: Snapshot) => void;
   setPanel: (panel: Panel) => void;
@@ -105,6 +134,13 @@ interface State {
   /** Tandai/batalkan "nol pengeluaran" untuk satu hari WIB (lampunya ikut menyala). */
   toggleNoSpend: (day: number) => void;
   markLetterRead: (key: string) => void;
+  /** Pasang/ganti (rupiah per bulan) atau hapus (null) batas jajan sebuah tempat. */
+  setPlaceLimit: (name: string, limit: number | null) => void;
+  /** Baca ulang batas dari storage (perubahan dari tab lain). */
+  reloadPlaceLimits: () => void;
+  /** Buka peta jajan, opsional langsung menyorot satu tempat. */
+  openJajan: (placeName?: string | null) => void;
+  setHoverKiosk: (key: string | null) => void;
 
   tour: TourState;
   /** Setoran & pengeluaran yang berhasil sejak halaman dibuka (untuk tur). */
@@ -147,7 +183,18 @@ export const useVillage = create<State>()(
       };
       const apply = (result: ActionResult) => {
         if (result.ok) {
-          set({ snapshot: result.snapshot, loading: false, error: null });
+          const prev = get().snapshot;
+          // Akun berganti di tab lain lalu tab ini memuat ulang data: ambil data browser milik akun baru.
+          const owner = tourOwner(result.snapshot);
+          const switched = prev !== null && !isDemoSnapshot(prev) && tourOwner(prev) !== owner;
+          set({
+            snapshot: result.snapshot,
+            loading: false,
+            error: null,
+            ...(switched
+              ? { placeLimits: readPlaceLimits(owner), noSpendDays: readNoSpend(owner), letterRead: readLetter(owner) }
+              : {})
+          });
           celebrateSoon();
           return true;
         }
@@ -168,8 +215,8 @@ export const useVillage = create<State>()(
         set((s) => ({ toasts: [...s.toasts, t] }));
         setTimeout(() => get().dismissToast(t.id), 2800);
       };
-      const walkTo = (x: number, z: number, kind: VillagerTarget["kind"]) =>
-        set((s) => ({ villagerTarget: { x, z, kind, nonce: (s.villagerTarget?.nonce ?? 0) + 1 } }));
+      const walkTo = (x: number, z: number, kind: VillagerTarget["kind"], yaw?: number) =>
+        set((s) => ({ villagerTarget: { x, z, kind, yaw, nonce: (s.villagerTarget?.nonce ?? 0) + 1 } }));
 
       /**
        * Rayakan warga baru & bangunan level yang baru terbuka, sekali per user: yang sudah dirayakan
@@ -222,6 +269,9 @@ export const useVillage = create<State>()(
         celebrateGoalId: null,
         noSpendDays: [],
         letterRead: null,
+        placeLimits: NO_LIMITS,
+        jajanFocus: null,
+        hoverKiosk: null,
         tour: IDLE_TOUR,
         tourHits: NO_HITS,
 
@@ -233,12 +283,38 @@ export const useVillage = create<State>()(
             snapshot,
             unlocked: snapshot.pinRequired ? unlockedBefore : true,
             noSpendDays: readNoSpend(owner),
-            letterRead: readLetter(owner)
+            letterRead: readLetter(owner),
+            placeLimits: readPlaceLimits(owner)
           });
           // Warga/bangunan yang bertambah sejak kunjungan terakhir (mis. mencatat lewat tepira.id).
           setTimeout(celebrate, 900);
         },
-        setPanel: (panel) => set({ panel }),
+        // Fokus tempat hanya berlaku untuk satu kali buka lewat openJajan.
+        setPanel: (panel) => set({ panel, jajanFocus: null }),
+        openJajan: (placeName) =>
+          set({ panel: "jajan", jajanFocus: placeName ? spotKeyFor(placeName) : null, hoverKiosk: null }),
+        setHoverKiosk: (hoverKiosk) => set({ hoverKiosk }),
+        setPlaceLimit: (name, limit) => {
+          const s = get().snapshot;
+          if (!s || isDemoSnapshot(s) || !normalizePlaceName(name)) return;
+          // Mulai dari isi storage milik pemilik yang ditulis (bukan state di memori yang bisa saja
+          // milik akun sebelumnya di tab yang sama).
+          const owner = tourOwner(s);
+          const base = readPlaceLimits(owner);
+          const next = withPlaceLimit(base, name, limit);
+          if (next === base) {
+            set({ placeLimits: base });
+            return;
+          }
+          set({ placeLimits: writePlaceLimits(owner, next) });
+          // Tanpa nominal: pesan ini tampil juga saat angka disembunyikan.
+          notify(limit ? `🎯 Batas jajan ${name.trim()} disimpan.` : `Batas jajan ${name.trim()} dihapus.`);
+        },
+        reloadPlaceLimits: () => {
+          const s = get().snapshot;
+          if (!s || isDemoSnapshot(s)) return;
+          set({ placeLimits: readPlaceLimits(tourOwner(s)) });
+        },
         openGoal: (goalId) => set({ selectedGoalId: goalId, panel: goalId ? "goals" : get().panel }),
         openWallet: (walletId) => set({ selectedWalletId: walletId, panel: walletId ? "wallets" : get().panel }),
         setTime: (time) => set((s) => ({ ui: { ...s.ui, time } })),
@@ -341,19 +417,49 @@ export const useVillage = create<State>()(
           return ok;
         },
         spend: async (input) => {
+          const placeName = input.place?.name?.trim() || null;
+          const placeKey = placeName ? normalizePlaceName(placeName) : null;
+          const spentBefore = placeKey ? (spendByPlaceName(get().snapshot?.expenses ?? []).get(placeKey)?.total ?? 0) : 0;
           const ok = await mutate(() => actions.addExpense(input, period()));
           if (ok) {
             set((s) => ({ tourHits: { ...s.tourHits, spend: s.tourHits.spend + 1 } }));
-            walkTo(WARUNG.x - 1.2, WARUNG.z + 3.4, "spend");
-            pushToast({
-              x: WARUNG.x,
-              z: WARUNG.z,
-              y: 4.4,
-              text: `-${formatCompact(input.amount)}`,
-              sub: input.category || "Pengeluaran",
-              tone: "spend"
-            });
-            notify("Pengeluaran tercatat & saldo dompet diperbarui.");
+            const snap = get().snapshot;
+            const kiosk = snap && placeKey ? placedKiosks(snap, get().placeLimits).find((k) => k.key === placeKey) : undefined;
+            if (kiosk) {
+              // Jajan di tempat langganan: si penabung mampir ke kiosnya, bukan ke warung.
+              const front = kioskFront(kiosk.spot);
+              walkTo(front.x, front.z, "spend", front.yaw);
+              pushToast({
+                x: kiosk.spot.x,
+                z: kiosk.spot.z,
+                y: 3.2,
+                text: `-${formatCompact(input.amount)}`,
+                sub: kiosk.name,
+                tone: "spend"
+              });
+            } else {
+              walkTo(WARUNG.x - 1.2, WARUNG.z + 3.4, "spend");
+              pushToast({
+                x: WARUNG.x,
+                z: WARUNG.z,
+                y: 4.4,
+                text: `-${formatCompact(input.amount)}`,
+                sub: input.category || "Pengeluaran",
+                tone: "spend"
+              });
+            }
+            // Naik level batas (aman → hampir → lewat) karena catatan ini: kabari tanpa menyebut nominal.
+            const limit = snap && placeKey ? findPlaceLimit(get().placeLimits, placeKey) : null;
+            const spentAfter = snap && placeKey ? (spendByPlaceName(snap.expenses).get(placeKey)?.total ?? 0) : 0;
+            const before = limit ? limitStatus(spentBefore, limit.limit) : null;
+            const after = limit ? limitStatus(spentAfter, limit.limit) : null;
+            if (snap && limit && after && before && LIMIT_RANK[after.level] > LIMIT_RANK[before.level]) {
+              notify(
+                `Pengeluaran tercatat. ${LIMIT_EMOJI[after.level]} ${limit.name} ${LIMIT_WORD[after.level]} ${periodWord(snap.period)}.`
+              );
+            } else {
+              notify("Pengeluaran tercatat & saldo dompet diperbarui.");
+            }
           }
           return ok;
         },
@@ -476,6 +582,9 @@ if (typeof window !== "undefined") {
     try {
       if (e.storageArea === window.localStorage && (e.key === "tepira-village-ui" || e.key === null)) {
         void useVillage.persist.rehydrate();
+      }
+      if (e.storageArea === window.localStorage && (e.key === null || e.key.startsWith(PLACE_LIMITS_PREFIX))) {
+        useVillage.getState().reloadPlaceLimits();
       }
     } catch {
       // storage diblokir: preferensi cukup diingat di tab ini
