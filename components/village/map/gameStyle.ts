@@ -196,6 +196,9 @@ const isLine: ExpressionSpecification = ["match", ["geometry-type"], ["LineStrin
 const width = (...stops: number[]): ExpressionSpecification =>
   ["interpolate", ["exponential", 1.4], ["zoom"], ...stops] as ExpressionSpecification;
 
+/** Kerangka gedung yang bagian-bagiannya (building:part) digambar terpisah ditandai hide_3d. */
+const SOLID_BUILDING: ExpressionSpecification = ["!", ["has", "hide_3d"]];
+
 /** Gedung pencakar langit dipotong supaya tetap terasa seperti mainan, bukan menara raksasa. */
 const MAX_HEIGHT = 140;
 const WALL_TOP: ExpressionSpecification = ["min", ["coalesce", ["get", "render_height"], 4], MAX_HEIGHT];
@@ -318,29 +321,13 @@ function layers(p: Palette): LayerSpecification[] {
       filter: byClass("farmland"),
       paint: { "fill-color": p.farmland }
     },
+    // Taman nasional & cagar alam: luas, jadi paling bawah supaya kota di dalamnya tetap terlihat.
     {
-      id: "landcover-grass",
+      id: "park",
       type: "fill",
       source: SOURCE,
-      "source-layer": "landcover",
-      filter: byClass("grass", "wetland"),
-      paint: { "fill-color": p.park, "fill-opacity": 0.7 }
-    },
-    {
-      id: "landcover-wood",
-      type: "fill",
-      source: SOURCE,
-      "source-layer": "landcover",
-      filter: byClass("wood"),
-      paint: { "fill-color": p.wood }
-    },
-    {
-      id: "landcover-sand",
-      type: "fill",
-      source: SOURCE,
-      "source-layer": "landcover",
-      filter: byClass("sand", "beach"),
-      paint: { "fill-color": p.sand }
+      "source-layer": "park",
+      paint: { "fill-color": p.park, "fill-opacity": 0.6 }
     },
     {
       id: "landuse-residential",
@@ -374,19 +361,38 @@ function layers(p: Palette): LayerSpecification[] {
       filter: byClass("school", "university", "kindergarten", "college", "library", "hospital", "religious"),
       paint: { "fill-color": p.civic }
     },
+    // Rumput (termasuk taman kota), hutan, dan pasir di atas tata guna lahan, supaya taman di tengah
+    // permukiman tidak tertutup warna permukiman.
+    {
+      id: "landcover-grass",
+      type: "fill",
+      source: SOURCE,
+      "source-layer": "landcover",
+      filter: byClass("grass", "wetland"),
+      paint: { "fill-color": p.park, "fill-opacity": 0.85 }
+    },
+    {
+      id: "landcover-wood",
+      type: "fill",
+      source: SOURCE,
+      "source-layer": "landcover",
+      filter: byClass("wood"),
+      paint: { "fill-color": p.wood }
+    },
+    {
+      id: "landcover-sand",
+      type: "fill",
+      source: SOURCE,
+      "source-layer": "landcover",
+      filter: byClass("sand", "beach"),
+      paint: { "fill-color": p.sand }
+    },
     {
       id: "landuse-play",
       type: "fill",
       source: SOURCE,
       "source-layer": "landuse",
       filter: byClass("stadium", "pitch", "playground", "cemetery", "zoo", "theme_park"),
-      paint: { "fill-color": p.park }
-    },
-    {
-      id: "park",
-      type: "fill",
-      source: SOURCE,
-      "source-layer": "park",
       paint: { "fill-color": p.park }
     },
     {
@@ -421,7 +427,8 @@ function layers(p: Palette): LayerSpecification[] {
         "line-width": ["interpolate", ["exponential", 1.4], ["zoom"], 8, riverOr(0.8, 0.2), 14, riverOr(3, 1), 18, riverOr(16, 5)]
       }
     },
-    // Cincin pasir di bawah air: setengah lebarnya muncul di daratan seperti pantai pulau desa.
+    // Pantai di bawah air: cincin pasir lebar lalu pita buih yang lebih sempit. Keduanya di bawah isian
+    // air, jadi hanya bagian di daratan yang terlihat dan sambungan antar-poligon air tertutup.
     {
       id: "water-shore",
       type: "line",
@@ -432,14 +439,6 @@ function layers(p: Palette): LayerSpecification[] {
       paint: { "line-color": p.shore, "line-width": width(6, 1, 10, 3, 14, 7, 18, 16) }
     },
     {
-      id: "water",
-      type: "fill",
-      source: SOURCE,
-      "source-layer": "water",
-      filter: notTunnel,
-      paint: { "fill-color": p.water }
-    },
-    {
       id: "water-foam",
       type: "line",
       source: SOURCE,
@@ -447,7 +446,15 @@ function layers(p: Palette): LayerSpecification[] {
       minzoom: 9,
       filter: notTunnel,
       layout: { "line-join": "round" },
-      paint: { "line-color": p.foam, "line-width": width(9, 0.6, 14, 1.6, 18, 3), "line-offset": width(9, 0.6, 14, 2, 18, 5) }
+      paint: { "line-color": p.foam, "line-width": width(9, 1, 14, 3, 18, 6) }
+    },
+    {
+      id: "water",
+      type: "fill",
+      source: SOURCE,
+      "source-layer": "water",
+      filter: notTunnel,
+      paint: { "fill-color": p.water }
     },
     {
       id: "path",
@@ -494,6 +501,7 @@ function layers(p: Palette): LayerSpecification[] {
       source: SOURCE,
       "source-layer": "building",
       minzoom: 15,
+      filter: SOLID_BUILDING,
       paint: {
         "fill-extrusion-color": buildingColor(p.walls),
         "fill-extrusion-height": WALL_TOP,
@@ -507,6 +515,7 @@ function layers(p: Palette): LayerSpecification[] {
       source: SOURCE,
       "source-layer": "building",
       minzoom: 15,
+      filter: SOLID_BUILDING,
       paint: {
         "fill-extrusion-color": buildingColor(p.roofs),
         "fill-extrusion-base": WALL_TOP,
@@ -529,12 +538,29 @@ function layers(p: Palette): LayerSpecification[] {
       type: "symbol",
       source: SOURCE,
       "source-layer": "water_name",
+      filter: ["match", ["geometry-type"], ["Point", "MultiPoint"], true, false],
       layout: {
         "text-field": NAME,
         "text-font": FONT_ITALIC,
         "text-size": ["interpolate", ["linear"], ["zoom"], 3, 11, 10, 15],
         "text-letter-spacing": 0.15,
         "text-max-width": 6
+      },
+      paint: { "text-color": p.waterText, "text-halo-color": p.waterHalo, "text-halo-width": 1.6 }
+    },
+    // Nama danau besar datang sebagai garis tengah danau: tulis mengikuti garisnya.
+    {
+      id: "label-water-line",
+      type: "symbol",
+      source: SOURCE,
+      "source-layer": "water_name",
+      filter: isLine,
+      layout: {
+        "symbol-placement": "line",
+        "text-field": NAME,
+        "text-font": FONT_ITALIC,
+        "text-size": ["interpolate", ["linear"], ["zoom"], 3, 11, 10, 15],
+        "text-letter-spacing": 0.15
       },
       paint: { "text-color": p.waterText, "text-halo-color": p.waterHalo, "text-halo-width": 1.6 }
     },
@@ -659,8 +685,9 @@ export function buildGameStyle(theme: MapTheme): StyleSpecification {
       [SOURCE]: {
         type: "vector",
         url: "https://tiles.openfreemap.org/planet",
+        // Kredit wajib: OpenFreeMap, skema OpenMapTiles, dan data OpenStreetMap.
         attribution:
-          '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+          '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">© OpenMapTiles</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
       }
     },
     sky: gameSky(theme),

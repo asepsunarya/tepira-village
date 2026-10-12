@@ -91,7 +91,7 @@ function popupNode(spots: readonly PlaceSpend[], hideMoney: boolean) {
     const title = document.createElement("b");
     title.textContent = `${categoryIcon(spot.topCategory)} ${spot.name ?? "Titik tanpa nama"}`;
     const detail = document.createElement("span");
-    detail.textContent = `${spot.count}× ke sini · ${money(spot.total, hideMoney)}`;
+    detail.textContent = `${spot.visits}× ke sini · ${spot.count} catatan · ${money(spot.total, hideMoney)}`;
     row.append(title, detail);
     if (spot.topCategory) {
       const category = document.createElement("small");
@@ -140,6 +140,17 @@ function openPopup(
   state.key = key;
 }
 
+/**
+ * Jarak tepi untuk fitBounds, dijepit ke ruang yang tersisa setelah padding peta (sidebar/lembar):
+ * kalau jumlahnya melebihi ukuran peta, MapLibre diam-diam tidak bergerak sama sekali.
+ */
+function fitPad(map: MapLibreMap, want: number) {
+  const box = map.getContainer();
+  const { top = 0, right = 0, bottom = 0, left = 0 } = map.getPadding();
+  const room = Math.min(box.clientWidth - left - right, box.clientHeight - top - bottom);
+  return Math.max(0, Math.min(want, Math.floor(room / 3)));
+}
+
 function fitSpots(map: MapLibreMap, spots: readonly PlaceSpend[], duration = 700) {
   if (!spots.length) return;
   if (spots.length === 1) {
@@ -148,7 +159,7 @@ function fitSpots(map: MapLibreMap, spots: readonly PlaceSpend[], duration = 700
   }
   const bounds = new LngLatBounds();
   for (const s of spots) bounds.extend([s.lng, s.lat]);
-  map.fitBounds(bounds, { padding: 70, maxZoom: 15.5, duration });
+  map.fitBounds(bounds, { padding: fitPad(map, 70), maxZoom: 15.5, duration });
 }
 
 /**
@@ -218,7 +229,11 @@ export default function JajanMap({
         count: members.reduce((sum, m) => sum + m.count, 0)
       };
     });
-    const signature = `${hide}|${sel}|${groups.map((g) => g.members.map((m) => m.key).join("+")).join(",")}`;
+    // Ikut isi yang digambar (nominal, jumlah, kategori, titik), bukan hanya kunci: ganti bulan atau
+    // kategori bisa menghasilkan tempat & urutan yang sama dengan angka berbeda.
+    const signature = `${hide}|${sel}|${groups
+      .map((g) => g.members.map((m) => `${m.key}:${m.total}:${m.count}:${m.topCategory}:${m.lat},${m.lng}`).join("+"))
+      .join(",")}`;
     if (signature === drawn.current) return;
     drawn.current = signature;
     for (const m of markers.current) m.remove();
@@ -231,7 +246,7 @@ export default function JajanMap({
         if (g.members.length > 1 && map.getZoom() < ZOOM_MAX_SPLIT) {
           const bounds = new LngLatBounds();
           for (const m of g.members) bounds.extend([m.lng, m.lat]);
-          map.fitBounds(bounds, { padding: 90, maxZoom: ZOOM_MAX_SPLIT + 0.5, duration: 700 });
+          map.fitBounds(bounds, { padding: fitPad(map, 90), maxZoom: ZOOM_MAX_SPLIT + 0.5, duration: 700 });
         } else if (g.members.length > 1) {
           // Masih menumpuk di zoom terdekat (mis. satu gedung): tampilkan daftarnya.
           latest.current.onSelect(null);
@@ -301,6 +316,12 @@ export default function JajanMap({
     }
     if (mapRef.current) fitSpots(mapRef.current, latest.current.spots);
   }, [ready, spotKeys]);
+
+  // Popup daftar penanda gabungan berisi salinan data lama: tutup saat tempat atau mode privasi berganti.
+  // (Bukan di efek pilihan di bawah, karena daftar itu dibuka tepat saat pilihan dilepas.)
+  useEffect(() => {
+    if (popup.current.key === null) closePopup(popup.current);
+  }, [spots, hideMoney]);
 
   useEffect(() => {
     const map = mapRef.current;

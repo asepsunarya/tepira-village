@@ -104,11 +104,13 @@ const at = (lat: number, lng: number) => ({ latitude: lat, longitude: lng });
 
 test("jajanSummary: tempat, perjalanan, tanpa tempat, langganan, pertama kali", () => {
   const month = [
-    expense({ amount: 15_000, placeName: "Bakso Pak Kumis", ...at(-6.8935, 107.6104) }),
-    expense({ amount: 20_000, placeName: "Bakso Pak Kumis", ...at(-6.8935, 107.6104) }),
+    // dua hari berbeda = dua kunjungan
+    expense({ amount: 15_000, placeName: "Bakso Pak Kumis", ...at(-6.8935, 107.6104), date: "2026-10-03T05:00:00Z" }),
+    expense({ amount: 20_000, placeName: "Bakso Pak Kumis", ...at(-6.8935, 107.6104), date: "2026-10-08T05:00:00Z" }),
     expense({ amount: 30_000, category: "Nongkrong / jajan", placeName: "Kopi Toko Djawa", ...at(-6.9175, 107.6098) }),
-    expense({ amount: 26_500, category: "Belanja kecil", placeName: "Indomaret Dago", ...at(-6.8858, 107.6136) }),
-    expense({ amount: 12_000, category: "Makan harian", placeName: "Indomaret Dago", ...at(-6.8858, 107.6136) }),
+    // dua struk di hari WIB yang sama (pagi & malam) = satu kunjungan
+    expense({ amount: 26_500, category: "Belanja kecil", placeName: "Indomaret Dago", ...at(-6.8858, 107.6136), date: "2026-10-09T01:00:00Z" }),
+    expense({ amount: 12_000, category: "Makan harian", placeName: "Indomaret Dago", ...at(-6.8858, 107.6136), date: "2026-10-09T14:00:00Z" }),
     expense({ amount: 18_000, category: "Transport" }),
     expense({ amount: 22_000, category: "Transport" }),
     expense({ amount: 54_990, category: "Langganan (Spotify, Netflix, dll)" }),
@@ -126,7 +128,9 @@ test("jajanSummary: tempat, perjalanan, tanpa tempat, langganan, pertama kali", 
     { label: "Belanja kecil", places: 1 },
     { label: "Nongkrong / jajan", places: 1 }
   ]);
-  assert.deepEqual(s.regulars.map((p) => p.name), ["Indomaret Dago", "Bakso Pak Kumis"]);
+  assert.deepEqual(s.regulars.map((p) => p.name), ["Bakso Pak Kumis"]);
+  const indomaret = s.spots.find((p) => p.name === "Indomaret Dago")!;
+  assert.deepEqual([indomaret.count, indomaret.visits], [2, 1]);
   assert.deepEqual(s.firstVisits.map((p) => p.name).sort(), ["Indomaret Dago", "Kopi Toko Djawa"]);
 
   const makan = jajanSummary(month, [], "Makan harian");

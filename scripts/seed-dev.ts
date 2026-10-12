@@ -139,7 +139,8 @@ async function main() {
     { amount: 19_000, category: "Transport", note: "Ojek", walletId: gopay.id, days: 4 },
     { amount: 24_000, category: "Transport", note: "Taksi online", walletId: gopay.id, days: 6 },
     // Bulan lalu: bakso sudah pernah didatangi, jadi bukan "pertama kali" di bulan ini.
-    { amount: 25_000, category: "Makan harian", note: "Bakso", walletId: cash.id, days: 24, place: PLACES.bakso, anyMonth: true }
+    // (selalu 5 hari sebelum tanggal 1, berapa pun tanggal seed dijalankan)
+    { amount: 25_000, category: "Makan harian", note: "Bakso", walletId: cash.id, days: now.getDate() + 5, place: PLACES.bakso, anyMonth: true }
   ];
   for (const e of expenses) {
     const d = ago(e.days);

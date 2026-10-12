@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { expenseCategories } from "@/lib/categories";
 import { MONTHS_ID, formatCompact, monthLabel } from "@/lib/format";
@@ -85,6 +85,12 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [focus, setFocus] = useState<MapFocus | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Fokus keyboard pindah ke dalam tampilan (HUD di belakangnya dibuat inert).
+  useEffect(() => {
+    closeRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -125,7 +131,7 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
   const row = (spot: PlaceSpend, sub: string) => (
     <SpotRow key={spot.key} spot={spot} sub={sub} active={selected === spot.key} onPick={() => pick(spot)} />
   );
-  const detail = (s: PlaceSpend) => `${s.count}× · ${s.topCategory ? shortCategory(s.topCategory) : "Lainnya"}`;
+  const detail = (s: PlaceSpend) => `${s.count} catatan · ${s.topCategory ? shortCategory(s.topCategory) : "Lainnya"}`;
 
   return (
     <div className={`jajan-view theme-${theme}`}>
@@ -155,7 +161,7 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
               </button>
             </div>
           </div>
-          <button className="icon-btn" onClick={onClose} title="Kembali ke desa (Esc)">
+          <button ref={closeRef} className="icon-btn" onClick={onClose} title="Kembali ke desa (Esc)" aria-label="Kembali ke desa">
             ✕
           </button>
         </header>
@@ -277,7 +283,7 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
                   <h3>
                     ⭐ Tempat langgananmu <small>paling sering</small>
                   </h3>
-                  <div className="jv-list">{summary.regulars.slice(0, 5).map((s) => row(s, `${s.count}× ke sini`))}</div>
+                  <div className="jv-list">{summary.regulars.slice(0, 5).map((s) => row(s, `${s.visits}× ke sini`))}</div>
                 </section>
               )}
 
@@ -326,8 +332,8 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
           )}
 
           <p className="jv-note">
-            Penanda = tempat · ikon & warna = kategori terbanyak · angka = jumlah catatan. Peta bergaya desa dari data ©
-            OpenStreetMap (OpenFreeMap).
+            Penanda = tempat · ikon & warna = kategori terbanyak · angka = jumlah catatan. Peta bergaya desa dari ubin
+            OpenFreeMap (© OpenMapTiles, data © OpenStreetMap).
           </p>
         </div>
       </aside>

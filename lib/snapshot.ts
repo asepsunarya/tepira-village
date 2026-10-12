@@ -128,11 +128,12 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       take: 500
     }),
     // Nama tempat setahun sebelum bulan yang dilihat: tempat bulan ini yang tidak ada di sini
-    // tampil sebagai "Pertama kali bulan ini" di peta jajan.
-    prisma.expense.findMany({
+    // tampil sebagai "Pertama kali bulan ini" di peta jajan. groupBy (bukan findMany + distinct)
+    // supaya pengelompokan & batasnya terjadi di database, bukan setelah semua baris diambil.
+    prisma.expense.groupBy({
+      by: ["placeName"],
       where: { ...ownerWhere, date: { gte: new Date(start.getTime() - 365 * DAY_MS), lt: start }, placeName: { not: null } },
-      select: { placeName: true },
-      distinct: ["placeName"],
+      orderBy: { placeName: "asc" },
       take: 2000
     })
   ]);

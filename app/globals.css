@@ -436,7 +436,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .jajan-view { position: fixed; inset: 0; z-index: 24; background: #f7f2e9; }
 .jm-wrap { position: absolute; inset: 0; overflow: hidden; }
 /* MapLibre memberi wadahnya position: relative, jadi ukurannya harus eksplisit. */
-.jm-map { width: 100%; height: 100%; }
+.jm-map { width: 100%; height: 100%; isolation: isolate; } /* penanda & popup tetap di bawah sidebar dan tombol */
 .jm-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 900; color: var(--ink-soft); pointer-events: none; }
 .jm-wrap .maplibregl-ctrl-attrib { font-size: 10px; }
 .jm-controls { position: absolute; top: 16px; right: 16px; z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: rgba(255, 250, 247, 0.95); border: 2px solid #fff; border-radius: 18px; box-shadow: 0 4px 0 #ecdcd4, var(--shadow); }

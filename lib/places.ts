@@ -1,5 +1,5 @@
 import { expenseCategories, type ExpenseCategoryKey } from "@/lib/categories";
-import type { ExpenseView, KnownPlace } from "@/lib/game";
+import { wibDay, type ExpenseView, type KnownPlace } from "@/lib/game";
 
 /** Aturan "peta jajan" yang dipakai bersama server, panel peta, dan catat cepat. */
 
@@ -57,7 +57,10 @@ export interface PlaceSpend {
   lat: number;
   lng: number;
   total: number;
+  /** jumlah catatan */
   count: number;
+  /** jumlah hari (WIB) berbeda ke sini: dua struk di hari yang sama = satu kunjungan */
+  visits: number;
   /** label kategori dengan nominal terbesar di tempat ini */
   topCategory: string | null;
 }
@@ -71,7 +74,10 @@ const placeKey = (e: Pick<ExpenseView, "placeName">, lat: number, lng: number) =
  * yang tanpa nama dikelompokkan per titik (±11 m). Urut dari nominal terbesar.
  */
 export function spendingByPlace(expenses: readonly ExpenseView[]): PlaceSpend[] {
-  const groups = new Map<string, PlaceSpend & { latest: string; byCategory: Map<string, number> }>();
+  const groups = new Map<
+    string,
+    Omit<PlaceSpend, "visits"> & { latest: string; byCategory: Map<string, number>; days: Set<number> }
+  >();
   for (const e of expenses) {
     if (e.latitude === null || e.longitude === null) continue;
     const key = placeKey(e, e.latitude, e.longitude);
@@ -86,12 +92,14 @@ export function spendingByPlace(expenses: readonly ExpenseView[]): PlaceSpend[] 
         count: 0,
         topCategory: null,
         latest: e.date,
-        byCategory: new Map()
+        byCategory: new Map(),
+        days: new Set()
       };
       groups.set(key, g);
     }
     g.total += e.amount;
     g.count++;
+    g.days.add(wibDay(e.date));
     const category = e.category || "Lainnya";
     g.byCategory.set(category, (g.byCategory.get(category) ?? 0) + e.amount);
     if (e.date > g.latest) {
@@ -108,6 +116,7 @@ export function spendingByPlace(expenses: readonly ExpenseView[]): PlaceSpend[] 
       lng: g.lng,
       total: g.total,
       count: g.count,
+      visits: g.days.size,
       topCategory: [...g.byCategory.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
     }))
     .sort((a, b) => b.total - a.total);
@@ -166,7 +175,7 @@ export interface JajanSummary {
   travel: { count: number; total: number };
   /** selain transport, tanpa lokasi (tagihan, belanja online, …) */
   unplaced: { count: number; total: number; categories: string[] };
-  /** tempat yang didatangi lebih dari sekali, urut paling sering */
+  /** tempat yang didatangi lebih dari sekali (di hari berbeda), urut paling sering */
   regulars: PlaceSpend[];
   /** tempat bernama yang belum pernah dicatat setahun sebelum bulan ini */
   firstVisits: PlaceSpend[];
@@ -222,7 +231,7 @@ export function jajanSummary(
     categories,
     travel,
     unplaced,
-    regulars: spots.filter((s) => s.count > 1).sort((a, b) => b.count - a.count || b.total - a.total),
+    regulars: spots.filter((s) => s.visits > 1).sort((a, b) => b.visits - a.visits || b.total - a.total),
     firstVisits: spots.filter((s) => s.name !== null && !seen.has(normalizePlaceName(s.name)))
   };
 }
