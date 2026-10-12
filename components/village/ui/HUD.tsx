@@ -6,7 +6,7 @@ import { monthLabel } from "@/lib/format";
 import { signOutAction } from "@/app/village/actions";
 import { LogoMark } from "@/components/brand/Logo";
 import { useVillage } from "../store";
-import type { Panel, TimeOfDay } from "../types";
+import { isFullscreenPanel, type Panel, type TimeOfDay } from "../types";
 import { useStreak } from "../useProgress";
 import { Money } from "./Money";
 
@@ -60,8 +60,9 @@ export default function HUD() {
   const moneyShown = unlocked && !ui.hideMoney;
   const upcoming = nextUnlock(level);
   const toggleVillage = () => setPanel(panel === "village" ? null : "village");
-  // Peta jajan layar penuh menutupi HUD: jangan sampai fokus keyboard tertinggal di tombol yang tersembunyi.
-  const covered = panel === "jajan";
+  const toggleFlow = () => setPanel(panel === "aliran" ? null : "aliran");
+  // Tampilan layar penuh menutupi HUD: jangan sampai fokus keyboard tertinggal di tombol yang tersembunyi.
+  const covered = isFullscreenPanel(panel);
 
   return (
     <>
@@ -137,14 +138,19 @@ export default function HUD() {
             <small>Kekayaan bersih</small>
             <b><Money value={totals.netWorth} /></b>
           </div>
-          <div className="stat-tile spend">
+          {/* Baris kontrol atas sudah penuh di layar 1400 px, jadi aliran uang dibuka dari dua kotak ini. */}
+          <button className="stat-tile spend link" onClick={toggleFlow} title="Aliran uang: ke mana saja uang bulan ini mengalir">
             <small>Pengeluaran bulan ini</small>
             <b><Money value={summary.expenses.total} /></b>
-          </div>
-          <div className={`stat-tile ${budget.status === "OVER_BUDGET" ? "spend" : ""}`}>
+          </button>
+          <button
+            className={`stat-tile link ${budget.status === "OVER_BUDGET" ? "spend" : ""}`}
+            onClick={toggleFlow}
+            title="Aliran uang: ke mana saja uang bulan ini mengalir"
+          >
             <small>{budget.status === "NO_BUDGET" ? "Budget belum diatur" : "Sisa budget"}</small>
             <b>{budget.status === "NO_BUDGET" ? "—" : <Money value={budget.remaining} />}</b>
-          </div>
+          </button>
         </div>
 
         <div className="stat-row">

@@ -38,6 +38,7 @@ import { AmountInput, CATEGORY_GROUPS } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
 import JajanView from "./JajanView";
+import AliranView from "./AliranView";
 import { PlaceLimitHint } from "./PlaceLimit";
 import { useLimitViews } from "../usePlaces";
 
@@ -1151,6 +1152,9 @@ function MonthPanel() {
           <button className="pill" onClick={() => setPanel("jajan")}>
             🗺️ Peta jajan
           </button>
+          <button className="pill" onClick={() => setPanel("aliran")}>
+            🌊 Aliran uang
+          </button>
         </div>
         <p className="muted small">Bonus dan saldo awal masih diatur lewat tepira.id (halaman Bonus / Saldo Awal).</p>
       </section>
@@ -1366,7 +1370,8 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   month: "📊 Bulan ini",
   village: "🏝️ Perkembangan desa",
   letter: "💌 Surat dari Cyrene",
-  jajan: "🗺️ Peta jajan"
+  jajan: "🗺️ Peta jajan",
+  aliran: "🌊 Aliran uang"
 };
 
 export default function Panels() {
@@ -1375,6 +1380,7 @@ export default function Panels() {
   if (!panel) return null;
   // Peta jajan tampil layar penuh, bukan panel samping.
   if (panel === "jajan") return <JajanView onClose={() => setPanel(null)} />;
+  if (panel === "aliran") return <AliranView onClose={() => setPanel(null)} />;
   return (
     <PanelShell title={TITLES[panel]} onClose={() => setPanel(null)}>
       {panel === "goals" && <GoalsPanel />}

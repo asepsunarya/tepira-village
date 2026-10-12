@@ -165,6 +165,7 @@ test("pratinjau surat mengikuti angka ringkasan", () => {
     expenses: { total: 0, count: 0 },
     budget: { limit: 0, remaining: 0, status: "NO_BUDGET" },
     savedThisMonth: 0,
+    savedByGoal: [],
     savingsRate: 25,
     byCategory: {},
     health: {

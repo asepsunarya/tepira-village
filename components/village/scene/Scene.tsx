@@ -5,6 +5,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import { TIME_PRESETS, autoTime } from "../layout";
 import { useVillage } from "../store";
+import { isFullscreenPanel } from "../types";
 import Island from "./Island";
 import Path from "./Path";
 import Decor from "./Decor";
@@ -52,8 +53,8 @@ export default function Scene() {
   const goalCount = useVillage((s) => s.snapshot?.goals.length ?? 0);
   const walletCount = useVillage((s) => s.snapshot?.wallets.length ?? 0);
   const setPanel = useVillage((s) => s.setPanel);
-  // Selama peta jajan terbuka, desa berhenti merender: peta punya kanvas WebGL sendiri.
-  const paused = useVillage((s) => s.panel === "jajan");
+  // Selama tampilan layar penuh terbuka (peta jajan, aliran uang), desa berhenti merender.
+  const paused = useVillage((s) => isFullscreenPanel(s.panel));
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
 
   const time = timeSetting === "auto" ? autoTime(health) : timeSetting;
@@ -111,7 +112,8 @@ export default function Scene() {
         shadow-normalBias={0.03}
       />
 
-      <Island sea={p.sea} />
+      {/* Kolam = waduk desa: klik untuk melihat aliran uang bulan ini. */}
+      <Island sea={p.sea} onPond={() => setPanel("aliran")} />
       <Path />
       <Decor usedPlots={goalCount} walletCount={walletCount} reserved />
       <Hall lit={p.windows} />

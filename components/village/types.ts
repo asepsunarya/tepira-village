@@ -9,7 +9,11 @@ export type Panel =
   | "village"
   | "letter"
   | "jajan"
+  | "aliran"
   | null;
+
+/** Panel yang tampil layar penuh menutupi desa (scene berhenti merender, HUD dibuat inert). */
+export const isFullscreenPanel = (panel: Panel) => panel === "jajan" || panel === "aliran";
 export type TimeOfDay = "auto" | "day" | "cloudy" | "sunset" | "night";
 /** Suasana peta jajan: "desa" = ikut cuaca desa saat ini. */
 export type MapThemeSetting = "desa" | "siang" | "senja" | "malam";

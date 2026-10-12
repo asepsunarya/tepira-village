@@ -123,13 +123,15 @@ function withDerived(base: Omit<Snapshot, "summary" | "totals">, period: { month
   const totalIncome = salary?.amount ?? 0;
   const totalExpenses = base.expenses.reduce((s, e) => s + e.amount, 0);
 
+  const inMonth = (iso: string) => {
+    const t = Date.parse(iso);
+    return t >= start && t < end;
+  };
   const all = base.goals.flatMap((g) => g.contributions);
-  const savedThisMonth = all
-    .filter((c) => {
-      const t = Date.parse(c.date);
-      return t >= start && t < end;
-    })
-    .reduce((s, c) => s + c.amount, 0);
+  const savedThisMonth = all.filter((c) => inMonth(c.date)).reduce((s, c) => s + c.amount, 0);
+  const savedByGoal = base.goals
+    .map((g) => ({ goalId: g.id, amount: g.contributions.filter((c) => inMonth(c.date)).reduce((s, c) => s + c.amount, 0) }))
+    .filter((g) => g.amount > 0);
   const savedAmount = savedThisMonth + (salary?.savingsAllocation ?? 0);
   const savingsRate = totalIncome > 0 ? Math.round((savedAmount / totalIncome) * 1000) / 10 : 0;
 
@@ -166,6 +168,7 @@ function withDerived(base: Omit<Snapshot, "summary" | "totals">, period: { month
         status: budgetLimit === 0 ? "NO_BUDGET" : totalExpenses > budgetLimit ? "OVER_BUDGET" : "WITHIN_BUDGET"
       },
       savedThisMonth,
+      savedByGoal,
       savingsRate,
       byCategory,
       health: {

@@ -61,6 +61,10 @@ a { color: inherit; text-decoration: none; }
 .stat-tile.save b { color: #1f8a63; }
 .stat-tile.spend { border-color: #ffd0d0; }
 .stat-tile.spend b { color: #c23b3b; }
+/* kotak yang membuka aliran uang */
+button.stat-tile.link { text-align: left; transition: border-color 0.15s, transform 0.15s; }
+button.stat-tile.link:hover { border-color: #a8dcf3; transform: translateY(-1px); }
+button.stat-tile.link small::after { content: " 🌊"; }
 .stat-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .stat { font-size: 12px; font-weight: 700; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .stat b { color: var(--ink); font-weight: 900; font-size: 13px; }
@@ -560,6 +564,39 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
   .jm-controls button { width: 36px; height: 36px; font-size: 15px; }
   .jm-menu { top: 12px; right: 64px; }
   .jv-side { top: calc(48vh - 18px); left: 0; right: 0; bottom: 0; width: auto; border-radius: 22px 22px 0 0; border-bottom: 0; }
+}
+
+/* ---------- aliran uang (layar penuh, sungai dari mata air gaji) ---------- */
+.aliran-view { position: fixed; inset: 0; z-index: 24; background: linear-gradient(180deg, #e3f4fb 0%, #eef8e6 45%, #e2f1d3 100%); }
+.av-stage { position: absolute; top: 16px; right: 16px; bottom: 16px; left: 412px; overflow-y: auto; overflow-x: hidden; padding: 12px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.35); border: 2px solid rgba(255, 255, 255, 0.8); }
+.av-svg { display: block; margin: 0 auto; overflow: visible; }
+.av-link path:first-child { opacity: 0.82; transition: opacity 0.2s; }
+.av-link.dim path:first-child { opacity: 0.18; }
+.av-link.dim .av-current { opacity: 0; }
+.av-current { fill: none; stroke: #fff; stroke-opacity: 0.6; stroke-linecap: round; stroke-dasharray: 2 14; animation: avFlow linear infinite; pointer-events: none; }
+@keyframes avFlow { to { stroke-dashoffset: -32; } }
+.av-node { cursor: pointer; outline: none; transition: opacity 0.2s; }
+.av-node.dim, .av-pool.dim { opacity: 0.35; }
+.av-node:focus-visible .av-bar { stroke: var(--pink); stroke-width: 3; }
+.av-bar { filter: drop-shadow(0 2px 0 rgba(120, 60, 100, 0.18)); }
+.av-label { font-size: 12px; font-weight: 900; fill: var(--ink); paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+.av-sub { font-size: 11px; font-weight: 800; fill: var(--ink-soft); paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+.av-sub.over { fill: #c23b3b; }
+.av-empty { height: 100%; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+.av-empty b { color: var(--ink); font-size: 15px; }
+.av-empty-art { font-size: 54px; }
+.jv-body section.av-hero { background: linear-gradient(135deg, #dff3fb, #e7f6df); box-shadow: 0 4px 0 #cfe6d6; }
+.av-split { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: #f1e4ea; border: 2px solid #fff; }
+.av-split span { min-width: 4px; }
+.av-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 4px; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.av-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 3px; border-radius: 3px; vertical-align: -1px; }
+.jv-body section.av-picked { border-color: #a8dcf3; box-shadow: 0 3px 0 #d6edf7; }
+@media (max-width: 760px) {
+  .av-stage { top: 0; right: 0; left: 0; bottom: auto; height: 52vh; padding: 10px 6px 26px; border-radius: 0; border: 0; }
+  .aliran-view .jv-side { top: calc(52vh - 18px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av-current { animation: none; }
 }
 
 .place-picker { display: flex; flex-direction: column; gap: 4px; }

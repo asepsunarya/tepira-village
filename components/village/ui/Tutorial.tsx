@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import type { Snapshot } from "@/lib/game";
 import { monthLabel } from "@/lib/format";
 import { useVillage } from "../store";
+import { isFullscreenPanel } from "../types";
 import { TOUR_LAST_STEP, periodKey, tourOwner, type TourBaseline, type TourHits } from "../tutorial/progress";
 import { NO_TARGET, TOUR_STEPS, type Target, type TourStep } from "../tutorial/steps";
 
@@ -663,7 +664,7 @@ export function useTourOn() {
     const snap = s.snapshot;
     // Peta jajan menutupi seluruh layar (HUD & dock yang ditunjuk tur tidak terlihat): tur jeda sampai ditutup.
     return Boolean(
-      snap && s.tour.active && s.panel !== "jajan" && s.tour.owner === tourOwner(snap) && (!snap.pinRequired || s.unlocked)
+      snap && s.tour.active && !isFullscreenPanel(s.panel) && s.tour.owner === tourOwner(snap) && (!snap.pinRequired || s.unlocked)
     );
   });
 }

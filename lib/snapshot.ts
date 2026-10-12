@@ -144,6 +144,12 @@ export async function buildSnapshot(userId: string, month: number, year: number)
   const allContributions = goals.flatMap((g) => g.contributions);
   const monthlyContributions = allContributions.filter((c) => c.date >= start && c.date < end);
   const savedThisMonth = monthlyContributions.reduce((s, c) => s + c.amount, 0);
+  const savedByGoal = goals
+    .map((g) => ({
+      goalId: g.id,
+      amount: g.contributions.reduce((s, c) => (c.date >= start && c.date < end ? s + c.amount : s), 0)
+    }))
+    .filter((g) => g.amount > 0);
   const savedAmount = savedThisMonth + (salary?.savingsAllocation || 0);
   const savingsRate = totalIncome > 0 ? Math.round((savedAmount / totalIncome) * 1000) / 10 : 0;
 
@@ -239,6 +245,7 @@ export async function buildSnapshot(userId: string, month: number, year: number)
         status: budgetLimit === 0 ? "NO_BUDGET" : totalExpenses > budgetLimit ? "OVER_BUDGET" : "WITHIN_BUDGET"
       },
       savedThisMonth,
+      savedByGoal,
       savingsRate,
       byCategory,
       health: {

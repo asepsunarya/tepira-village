@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { makeIslandGeometry } from "./geometry";
 import { POND, SEA_Y } from "../layout";
 
-export default function Island({ sea }: { sea: string }) {
+/** `onPond`: klik kolam (desa membuka aliran uang). Landing tidak memakainya. */
+export default function Island({ sea, onPond }: { sea: string; onPond?: () => void }) {
   const geometry = useMemo(makeIslandGeometry, []);
   return (
     <group>
@@ -23,7 +24,20 @@ export default function Island({ sea }: { sea: string }) {
           <circleGeometry args={[1, 48]} />
           <meshStandardMaterial color="#e9d9b5" />
         </mesh>
-        <mesh rotation-x={-Math.PI / 2} position-y={0.02} scale={[POND.rx, POND.rz, 1]}>
+        <mesh
+          rotation-x={-Math.PI / 2}
+          position-y={0.02}
+          scale={[POND.rx, POND.rz, 1]}
+          onClick={
+            onPond &&
+            ((e) => {
+              e.stopPropagation();
+              onPond();
+            })
+          }
+          onPointerOver={onPond && (() => (document.body.style.cursor = "pointer"))}
+          onPointerOut={onPond && (() => (document.body.style.cursor = ""))}
+        >
           <circleGeometry args={[1, 48]} />
           <meshStandardMaterial color="#8fd3f4" />
         </mesh>
