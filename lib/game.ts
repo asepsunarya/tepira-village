@@ -127,6 +127,11 @@ export interface Snapshot {
   insight: InsightView | null;
   /** Tempat jajan yang pernah dicatat (setahun terakhir), paling sering dulu. */
   places: KnownPlace[];
+  /**
+   * Nama tempat (dinormalkan, lihat normalizePlaceName) yang tercatat setahun sebelum bulan yang
+   * dilihat, untuk "Pertama kali bulan ini" di peta jajan.
+   */
+  placesBefore: string[];
   totals: {
     totalSaved: number;
     contributionCount: number;

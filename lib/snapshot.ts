@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
 import { ACTIVITY_WINDOW_DAYS, DAY_MS, healthStatusFor, wibDay, type SalaryView, type Snapshot } from "@/lib/game";
-import { knownPlacesFrom } from "@/lib/places";
+import { knownPlacesFrom, normalizePlaceName } from "@/lib/places";
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -64,8 +64,20 @@ export async function buildSnapshot(userId: string, month: number, year: number)
   const activitySince = new Date(Date.now() - (ACTIVITY_WINDOW_DAYS + 1) * DAY_MS);
   const placesSince = new Date(Date.now() - 366 * DAY_MS);
 
-  const [user, goals, wallets, expenses, salary, bonus, balance, previousSalary, activityExpenses, insight, placeRows] =
-    await Promise.all([
+  const [
+    user,
+    goals,
+    wallets,
+    expenses,
+    salary,
+    bonus,
+    balance,
+    previousSalary,
+    activityExpenses,
+    insight,
+    placeRows,
+    earlierPlaceRows
+  ] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, image: true } }),
     prisma.goal.findMany({
       where: ownerWhere,
@@ -114,6 +126,15 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       select: { placeName: true, latitude: true, longitude: true },
       orderBy: { date: "desc" },
       take: 500
+    }),
+    // Nama tempat setahun sebelum bulan yang dilihat: tempat bulan ini yang tidak ada di sini
+    // tampil sebagai "Pertama kali bulan ini" di peta jajan. groupBy (bukan findMany + distinct)
+    // supaya pengelompokan & batasnya terjadi di database, bukan setelah semua baris diambil.
+    prisma.expense.groupBy({
+      by: ["placeName"],
+      where: { ...ownerWhere, date: { gte: new Date(start.getTime() - 365 * DAY_MS), lt: start }, placeName: { not: null } },
+      orderBy: { placeName: "asc" },
+      take: 2000
     })
   ]);
 
@@ -248,6 +269,7 @@ export async function buildSnapshot(userId: string, month: number, year: number)
         }
       : null,
     places: knownPlacesFrom(placeRows),
+    placesBefore: [...new Set(earlierPlaceRows.map((r) => normalizePlaceName(r.placeName ?? "")))].filter(Boolean),
     totals: {
       totalSaved,
       contributionCount: allContributions.length,

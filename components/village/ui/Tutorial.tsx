@@ -661,7 +661,10 @@ function TourLayer({ snapshot }: { snapshot: Snapshot }) {
 export function useTourOn() {
   return useVillage((s) => {
     const snap = s.snapshot;
-    return Boolean(snap && s.tour.active && s.tour.owner === tourOwner(snap) && (!snap.pinRequired || s.unlocked));
+    // Peta jajan menutupi seluruh layar (HUD & dock yang ditunjuk tur tidak terlihat): tur jeda sampai ditutup.
+    return Boolean(
+      snap && s.tour.active && s.panel !== "jajan" && s.tour.owner === tourOwner(snap) && (!snap.pinRequired || s.unlocked)
+    );
   });
 }
 

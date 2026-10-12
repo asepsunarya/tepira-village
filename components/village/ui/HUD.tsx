@@ -60,10 +60,12 @@ export default function HUD() {
   const moneyShown = unlocked && !ui.hideMoney;
   const upcoming = nextUnlock(level);
   const toggleVillage = () => setPanel(panel === "village" ? null : "village");
+  // Peta jajan layar penuh menutupi HUD: jangan sampai fokus keyboard tertinggal di tombol yang tersembunyi.
+  const covered = panel === "jajan";
 
   return (
     <>
-      <div className="hud-top-left card" data-tour="hud-stats">
+      <div className="hud-top-left card" data-tour="hud-stats" inert={covered}>
         <div className="hud-brand">
           <LogoMark size={36} className="brand-dot" />
           <div>
@@ -158,7 +160,7 @@ export default function HUD() {
         </div>
       </div>
 
-      <div className="hud-top-center">
+      <div className="hud-top-center" inert={covered}>
         <div className="card segmented" data-tour="period-nav">
           <button className="seg" onClick={() => void shiftPeriod(-1)} title="Bulan sebelumnya">‹</button>
           <span className="seg-label">{monthLabel(period.month, period.year)}</span>
@@ -183,7 +185,7 @@ export default function HUD() {
         <button className="card pill-lg" onClick={resetView} title="Kembali ke sudut pandang awal">🎯 Reset view</button>
       </div>
 
-      <div className="hud-user card">
+      <div className="hud-user card" inert={covered}>
         <button className="user-btn" onClick={() => setMenu((m) => !m)}>
           {user.image ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -209,7 +211,7 @@ export default function HUD() {
 
       <div className="hud-hint">🖱️ drag untuk putar · scroll untuk zoom · klik bangunan untuk detail</div>
 
-      <div className="dock card">
+      <div className="dock card" inert={covered}>
         {DOCK.map((d) => (
           <button
             key={d.key}

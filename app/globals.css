@@ -432,28 +432,102 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
   .streak-row.todo .streak-today { animation: none; }
 }
 
-/* ---------- peta jajan ---------- */
-.panel.wide { width: min(720px, calc(100vw - 32px)); }
-.jajan-map { position: relative; height: 340px; flex-shrink: 0; border-radius: 16px; overflow: hidden; border: 2px solid #f6ebf0; background: #eef0f2; }
-.jajan-map.loading { display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
-.jajan-map .maplibregl-ctrl-attrib { font-size: 10px; }
-.jajan-popup { display: flex; flex-direction: column; gap: 2px; font-family: inherit; color: var(--ink); }
+/* ---------- peta jajan (layar penuh, gaya peta game) ---------- */
+.jajan-view { position: fixed; inset: 0; z-index: 24; background: #f7f2e9; }
+.jm-wrap { position: absolute; inset: 0; overflow: hidden; }
+/* MapLibre memberi wadahnya position: relative, jadi ukurannya harus eksplisit. */
+.jm-map { width: 100%; height: 100%; isolation: isolate; } /* penanda & popup tetap di bawah sidebar dan tombol */
+.jm-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 900; color: var(--ink-soft); pointer-events: none; }
+.jm-wrap .maplibregl-ctrl-attrib { font-size: 10px; }
+.jm-controls { position: absolute; top: 16px; right: 16px; z-index: 2; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: rgba(255, 250, 247, 0.95); border: 2px solid #fff; border-radius: 18px; box-shadow: 0 4px 0 #ecdcd4, var(--shadow); }
+.jm-controls button { width: 40px; height: 40px; border-radius: 14px; display: grid; place-items: center; font-size: 17px; font-weight: 900; color: var(--ink); transition: background 0.15s; }
+.jm-controls button:hover { background: #fff0f6; }
+.jm-controls button.on { background: var(--pink-soft); color: #c2457d; box-shadow: inset 0 0 0 2px #ffbdd8; }
+.jm-controls button:disabled { opacity: 0.6; cursor: progress; }
+.jm-sep { display: block; height: 2px; margin: 2px 6px; border-radius: 2px; background: #f6ebf0; }
+.jm-menu { position: absolute; top: 16px; right: 74px; z-index: 3; display: flex; flex-direction: column; gap: 2px; min-width: 190px; padding: 8px; background: rgba(255, 250, 247, 0.97); border: 2px solid #fff; border-radius: 18px; box-shadow: var(--shadow); animation: popIn 0.15s ease-out; }
+.jm-menu b { padding: 2px 8px 4px; font-size: 11px; font-weight: 900; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.jm-menu button { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 12px; font-size: 13px; font-weight: 800; text-align: left; }
+.jm-menu button:hover { background: #fff0f6; }
+.jm-menu button.on { background: var(--pink-soft); color: #c2457d; }
+.jm-flash { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 3; max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 999px; background: rgba(255, 236, 240, 0.97); color: #b3384f; font-size: 12px; font-weight: 800; box-shadow: var(--shadow); }
+
+/* Penanda: lingkaran putih bercincin warna kategori, berbayang tebal seperti tombol game. */
+.jm-pin { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; }
+.jm-pin-body { position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; line-height: 1; background: #fff; border: 3px solid var(--ring); box-shadow: 0 4px 0 color-mix(in srgb, var(--ring) 60%, #5a4a5e), 0 8px 16px rgba(60, 40, 70, 0.28); transition: transform 0.15s; }
+.jm-pin.group .jm-pin-body::before { content: ""; position: absolute; inset: -3px; z-index: -1; border-radius: 50%; background: #fff; border: 3px solid var(--ring); transform: translate(7px, -6px); }
+.jm-pin-badge { position: absolute; top: -8px; right: -10px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center; background: var(--pink); color: #fff; font-size: 11px; font-weight: 900; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(120, 60, 100, 0.3); }
+.jm-pin-amount { padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.96); color: var(--ink); font-size: 11px; font-weight: 900; white-space: nowrap; box-shadow: 0 3px 8px rgba(60, 40, 70, 0.2); }
+.jm-pin:hover .jm-pin-body { transform: translateY(-2px) scale(1.06); }
+.jm-pin.on .jm-pin-body { transform: scale(1.14); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.95), 0 0 0 7px var(--ring), 0 8px 18px rgba(60, 40, 70, 0.3); }
+.jm-pin.on .jm-pin-amount { background: var(--ink); color: #fff; }
+.theme-malam .jm-pin-amount { background: rgba(44, 47, 85, 0.94); color: #fff3e6; }
+.theme-malam .jm-pin.on .jm-pin-amount { background: #fff3e6; color: var(--ink); }
+.jm-me { width: 18px; height: 18px; border-radius: 50%; background: #5b9ae0; border: 3px solid #fff; animation: mePulse 1.8s ease-out infinite; }
+@keyframes mePulse { 0% { box-shadow: 0 0 0 0 rgba(91, 154, 224, 0.55); } 100% { box-shadow: 0 0 0 18px rgba(91, 154, 224, 0); } }
+
+.jm-popup .maplibregl-popup-content { padding: 10px 14px; border-radius: 16px; background: #fffaf7; border: 2px solid #fff; box-shadow: var(--shadow); }
+.jm-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #fff; }
+.jajan-popup { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; font-family: inherit; color: var(--ink); }
+.jajan-popup-row { display: flex; flex-direction: column; gap: 1px; }
 .jajan-popup b { font-size: 13px; font-weight: 900; }
 .jajan-popup span { font-size: 12px; font-weight: 800; }
 .jajan-popup small { font-size: 11px; font-weight: 700; color: var(--ink-soft); }
-.maplibregl-popup-content { border-radius: 12px; padding: 8px 12px; box-shadow: var(--shadow); }
-.jajan-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; font-weight: 800; color: var(--ink-soft); }
-.jajan-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.jajan-legend i, .spot-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+/* Sidebar ala Peta Oyen */
+.jv-side { position: absolute; top: 16px; left: 16px; bottom: 16px; z-index: 2; width: 380px; display: flex; flex-direction: column; overflow: hidden; background: rgba(255, 250, 247, 0.96); animation: popIn 0.2s ease-out; }
+.jv-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 14px 16px 8px; }
+.jv-head h2 { margin: 0; font-size: 18px; font-weight: 900; }
+.jv-month { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; font-weight: 800; color: var(--ink-soft); }
+.jv-month .icon-btn:disabled { opacity: 0.5; cursor: progress; }
+.jv-body { flex: 1; overflow-y: auto; padding: 4px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.jv-body > * { flex-shrink: 0; }
+.jv-body section { display: flex; flex-direction: column; gap: 8px; }
+.jv-body h3 { display: flex; align-items: baseline; gap: 6px; margin: 6px 4px 0; font-size: 12px; font-weight: 900; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+.jv-body h3 small { font-size: 11px; font-weight: 800; text-transform: none; letter-spacing: 0; }
+.jv-body section.jv-hero { gap: 2px; padding: 12px 14px; border-radius: 18px; background: linear-gradient(135deg, #fff1c9, #ffe1ea); border: 2px solid #fff; box-shadow: 0 4px 0 #f3d9cc; }
+.jv-hero small { font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.jv-big { font-size: 24px; font-weight: 900; line-height: 1.2; }
+.jv-big-sub { font-size: 15px; font-weight: 800; color: var(--ink-soft); }
+.jv-search { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; background: #fff; border: 2px solid #f1e4ea; border-radius: 14px; }
+.jv-search:focus-within { border-color: #ffbdd8; }
+.jv-search input { flex: 1; min-width: 0; padding: 4px 0; border: 0; outline: none; background: transparent; font-size: 14px; font-weight: 700; }
+.jv-chips { display: flex; gap: 6px; overflow-x: auto; margin: 0 -14px; padding: 2px 14px 4px; scrollbar-width: none; }
+.jv-chips::-webkit-scrollbar { display: none; }
+.jv-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 999px; background: #fff; border: 2px solid #f1e4ea; font-size: 12px; font-weight: 800; transition: all 0.15s; }
+.jv-chip i { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; display: grid; place-items: center; background: #f8f0f4; color: var(--ink-soft); font-size: 11px; font-weight: 900; font-style: normal; }
+.jv-chip:hover { transform: translateY(-1px); }
+.jv-chip.on { border-color: var(--ring, #ffbdd8); background: color-mix(in srgb, var(--ring, #ff7eb3) 16%, #fff); }
+.jv-chip.on i { background: var(--ring, var(--pink)); color: #fff; }
+.jv-list { display: flex; flex-direction: column; gap: 6px; }
+.jv-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left; background: #fff; border: 2px solid #f6ebf0; border-radius: 14px; font-size: 13px; font-weight: 700; transition: border-color 0.15s, transform 0.15s; }
+button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
+.jv-row.on { border-color: var(--pink); box-shadow: 0 0 0 2px var(--pink-soft); }
+.jv-ico { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; display: grid; place-items: center; font-size: 17px; background: #fff; border: 3px solid var(--ring, #f1e4ea); }
+.jv-ico.plain { background: #f8f0f4; border-color: #f1e4ea; }
+.jv-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.jv-main b { font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jv-main small { font-size: 11px; font-weight: 700; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jv-amt { font-weight: 900; white-space: nowrap; }
+.jv-cards { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }
+.jv-card { flex: 0 0 118px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px; text-align: left; background: #fff; border: 2px solid #f6ebf0; border-radius: 16px; scroll-snap-align: start; transition: border-color 0.15s, transform 0.15s; }
+.jv-card:hover { border-color: #ffbdd8; transform: translateY(-1px); }
+.jv-card.on { border-color: var(--pink); }
+.jv-card b { min-height: 2.5em; font-size: 12px; font-weight: 900; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.jv-card small { font-size: 12px; font-weight: 900; }
+.jv-note { margin: 2px 4px 0; font-size: 11px; font-weight: 700; color: var(--ink-soft); }
 .jajan-empty { display: flex; flex-direction: column; gap: 6px; background: #fff; border-radius: 14px; padding: 12px; border: 2px dashed #f1e4ea; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
 .jajan-empty b { color: var(--ink); }
-.spot-list { display: flex; flex-direction: column; gap: 6px; }
-.spot-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: #fff; border-radius: 12px; padding: 8px 10px; border: 2px solid #f6ebf0; font-size: 13px; font-weight: 700; transition: border-color 0.15s; }
-.spot-row:hover { border-color: #ffbdd8; }
-.spot-rank { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #f8f0f4; font-size: 11px; font-weight: 900; color: var(--ink-soft); flex-shrink: 0; }
-.spot-main { flex: 1; min-width: 0; }
-.spot-main b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.spot-total { text-align: right; font-weight: 900; white-space: nowrap; }
+
+/* HP: peta di atas, sidebar jadi lembar di bawahnya. */
+@media (max-width: 760px) {
+  .jm-wrap { bottom: auto; height: 48vh; }
+  .jm-wrap .maplibregl-ctrl-bottom-right { bottom: 18px; }
+  .jm-controls { top: 12px; right: 12px; }
+  .jm-controls button { width: 36px; height: 36px; font-size: 15px; }
+  .jm-menu { top: 12px; right: 64px; }
+  .jv-side { top: calc(48vh - 18px); left: 0; right: 0; bottom: 0; width: auto; border-radius: 22px 22px 0 0; border-bottom: 0; }
+}
 
 .place-picker { display: flex; flex-direction: column; gap: 4px; }
 .place-picker > label { font-size: 12px; font-weight: 800; color: var(--ink-soft); }
@@ -467,10 +541,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .place-result { text-align: left; background: #fff; border: 2px solid #f1e4ea; border-radius: 10px; padding: 6px 10px; font-size: 12px; }
 .place-result:hover { border-color: #ffbdd8; }
 .place-result small { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-@media (max-width: 640px) {
-  .jajan-map { height: 260px; }
-}
 
 /* ---------- catat cepat ---------- */
 .quick-entry { display: flex; flex-direction: column; gap: 6px; background: #fff8ec; border: 2px solid #f6dca0; border-radius: 14px; padding: 10px; }

@@ -248,6 +248,7 @@ export function createDemoSnapshot(now = new Date()): Snapshot {
       activityDays: demoActivityDays(now),
       insight: null,
       places: [],
+      placesBefore: [],
       pinRequired: false,
       devLogin: false,
       generatedAt: now.toISOString()

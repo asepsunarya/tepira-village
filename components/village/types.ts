@@ -11,6 +11,8 @@ export type Panel =
   | "jajan"
   | null;
 export type TimeOfDay = "auto" | "day" | "cloudy" | "sunset" | "night";
+/** Suasana peta jajan: "desa" = ikut cuaca desa saat ini. */
+export type MapThemeSetting = "desa" | "siang" | "senja" | "malam";
 
 export interface WorldToast {
   id: string;

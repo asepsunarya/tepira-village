@@ -1,7 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ExpenseView } from "./game";
-import { categoryColor, knownPlacesFrom, matchKnownPlace, roundCoord, spendingByPlace, titleCase } from "./places";
+import {
+  categoryColor,
+  categoryIcon,
+  groupNearby,
+  jajanSummary,
+  knownPlacesFrom,
+  matchKnownPlace,
+  roundCoord,
+  shortCategory,
+  spendingByPlace,
+  spotMatches,
+  titleCase
+} from "./places";
 
 const PLACES = [
   { name: "Bakso Pak Kumis", lat: -6.8935, lng: 107.6104, count: 2 },
@@ -83,4 +95,67 @@ test("helper kecil", () => {
   assert.equal(roundCoord(-6.893456789), -6.89346);
   assert.equal(categoryColor("Transport"), "#5b9ae0");
   assert.equal(categoryColor("Lainnya"), "#9a8aa0");
+  assert.equal(categoryIcon("Nongkrong / jajan"), "☕");
+  assert.equal(categoryIcon(null), "📍");
+  assert.equal(shortCategory("Langganan (Spotify, Netflix, dll)"), "Langganan");
+});
+
+const at = (lat: number, lng: number) => ({ latitude: lat, longitude: lng });
+
+test("jajanSummary: tempat, perjalanan, tanpa tempat, langganan, pertama kali", () => {
+  const month = [
+    // dua hari berbeda = dua kunjungan
+    expense({ amount: 15_000, placeName: "Bakso Pak Kumis", ...at(-6.8935, 107.6104), date: "2026-10-03T05:00:00Z" }),
+    expense({ amount: 20_000, placeName: "Bakso Pak Kumis", ...at(-6.8935, 107.6104), date: "2026-10-08T05:00:00Z" }),
+    expense({ amount: 30_000, category: "Nongkrong / jajan", placeName: "Kopi Toko Djawa", ...at(-6.9175, 107.6098) }),
+    // dua struk di hari WIB yang sama (pagi & malam) = satu kunjungan
+    expense({ amount: 26_500, category: "Belanja kecil", placeName: "Indomaret Dago", ...at(-6.8858, 107.6136), date: "2026-10-09T01:00:00Z" }),
+    expense({ amount: 12_000, category: "Makan harian", placeName: "Indomaret Dago", ...at(-6.8858, 107.6136), date: "2026-10-09T14:00:00Z" }),
+    expense({ amount: 18_000, category: "Transport" }),
+    expense({ amount: 22_000, category: "Transport" }),
+    expense({ amount: 54_990, category: "Langganan (Spotify, Netflix, dll)" }),
+    expense({ amount: 150_000, category: "Pulsa & Internet" })
+  ];
+  const s = jajanSummary(month, ["bakso pak kumis"]);
+  assert.equal(s.spots.length, 3);
+  assert.equal(s.locatedTotal, 103_500);
+  assert.equal(s.monthTotal, 348_490);
+  assert.deepEqual(s.travel, { count: 2, total: 40_000 });
+  assert.deepEqual(s.unplaced, { count: 2, total: 204_990, categories: ["Pulsa & Internet", "Langganan"] });
+  // Indomaret punya dua kategori: ikut dihitung di keduanya
+  assert.deepEqual(s.categories, [
+    { label: "Makan harian", places: 2 },
+    { label: "Belanja kecil", places: 1 },
+    { label: "Nongkrong / jajan", places: 1 }
+  ]);
+  assert.deepEqual(s.regulars.map((p) => p.name), ["Bakso Pak Kumis"]);
+  const indomaret = s.spots.find((p) => p.name === "Indomaret Dago")!;
+  assert.deepEqual([indomaret.count, indomaret.visits], [2, 1]);
+  assert.deepEqual(s.firstVisits.map((p) => p.name).sort(), ["Indomaret Dago", "Kopi Toko Djawa"]);
+
+  const makan = jajanSummary(month, [], "Makan harian");
+  assert.deepEqual(makan.spots.map((p) => [p.name, p.total]), [["Bakso Pak Kumis", 35_000], ["Indomaret Dago", 12_000]]);
+  assert.equal(makan.locatedTotal, 47_000);
+  assert.equal(makan.categories.length, 3); // chip tetap semua kategori
+});
+
+test("spotMatches: nama atau kategori, tanpa peduli huruf besar", () => {
+  const [spot] = spendingByPlace([expense({ category: "Nongkrong / jajan", placeName: "Kopi Toko Djawa", ...at(-6.9, 107.6) })]);
+  assert.ok(spotMatches(spot, "djawa"));
+  assert.ok(spotMatches(spot, "  NONGKRONG "));
+  assert.ok(spotMatches(spot, ""));
+  assert.ok(!spotMatches(spot, "bakso"));
+});
+
+test("groupNearby: yang terbesar jadi pusat dan menyerap tetangga dalam radius", () => {
+  const points = [
+    { x: 0, y: 0 },
+    { x: 30, y: 0 },
+    { x: 200, y: 0 },
+    { x: 60, y: 0 }
+  ];
+  // titik 1 terbesar: menyerap 0 dan 3 (jarak 30), titik 2 sendirian
+  assert.deepEqual(groupNearby(points, [5, 10, 1, 2], 40), [[1, 0, 3], [2]]);
+  assert.deepEqual(groupNearby(points, [5, 10, 1, 2], 10), [[1], [0], [3], [2]]);
+  assert.deepEqual(groupNearby([], [], 40), []);
 });

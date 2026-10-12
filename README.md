@@ -81,9 +81,19 @@ Enter langsung menyimpan. Pengurainya `lib/quick-entry.ts`: murni aturan & kata 
 ## Peta jajan
 
 Pengeluaran boleh punya **tempat** (nama dan/atau titik). Tombol **🗺️ Peta jajan** (kontrol atas, atau panel Bulan
-ini) membuka peta bulan yang dilihat: satu lingkaran per tempat, warna = kategori terbanyak, besar = nominal (sama
-rata saat angka disembunyikan), plus daftar tempat teratas dan porsinya. Selama peta terbuka, scene 3D berhenti
-merender.
+ini) membuka peta layar penuh untuk bulan yang dilihat, tata letaknya terinspirasi "Peta Oyen":
+- **Peta bergaya desa** (`components/village/map/gameStyle.ts`): peta dasar digambar sendiri dari data vektor
+  OpenStreetMap: daratan rumput, cincin pasir di tepi air, jalan seperti setapak, gedung balok pastel beratap
+  (rumah terakota, gedung sedang pink, menara biru kaca) yang timbul di mode **3D**, label tebal berbingkai krem.
+  Suasana **siang / senja / malam** mengikuti cuaca desa (atau dipilih sendiri lewat tombol suasana; tersimpan di
+  browser).
+- **Penanda** per tempat: lingkaran putih bercincin warna kategori + ikon, angka = jumlah catatan, label nominal di
+  bawahnya. Tempat yang berdekatan di layar digabung jadi satu penanda bertumpuk; diklik = zoom ke kelompoknya.
+- **Sidebar** (di HP jadi lembar di bawah peta): ganti bulan, total jajan berlokasi "di N tempat", pencarian, chip
+  kategori, baris *Perjalanan* (transport tanpa tempat) & *Tanpa tempat* (→ Riwayat untuk diberi tempat), *Tempat
+  langgananmu* (paling sering), *Pertama kali bulan ini* (tidak tercatat setahun sebelumnya), dan semua tempat.
+- Tombol peta: zoom, **3D**, suasana, **lokasiku**, lihat semua. `Esc` atau ✕ kembali ke desa. Selama peta terbuka,
+  scene 3D desa berhenti merender. Nominal ikut mode sembunyikan angka.
 
 Cara mengisi tempat (isian **📍 Tempat** di form Catat dan di ✏️ Riwayat):
 - **📍** = lokasi sekarang dari browser (perlu izin; hanya https/localhost) + nama tempat terdekat dari OpenStreetMap.
@@ -92,10 +102,10 @@ Cara mengisi tempat (isian **📍 Tempat** di form Catat dan di ✏️ Riwayat):
 - **Catat cepat:** `kopi 20rb @toko djawa`. Kalau cocok dengan tempat yang pernah dicatat (boleh sebagian nama:
   `@kumis` → "Bakso Pak Kumis"), titiknya ikut; kalau tidak, tersimpan sebagai nama tanpa titik.
 
-Layanan luar (tanpa API key): peta dasar **OpenFreeMap** (`tiles.openfreemap.org`, data © OpenStreetMap) lewat
-MapLibre GL, dan **Nominatim** untuk nama tempat & pencarian. Nominatim hanya dipanggil saat tombol/Enter ditekan,
-sesuai aturan pakainya (maks. 1 permintaan/detik, tanpa autocomplete). MapLibre (±250 kB) dimuat hanya saat panel peta
-dibuka; worker-nya disalin webpack sebagai aset (`setWorkerUrl` di `components/village/ui/JajanMap.tsx`).
+Layanan luar (tanpa API key): ubin vektor & font **OpenFreeMap** (`tiles.openfreemap.org`, data © OpenStreetMap,
+skema OpenMapTiles) lewat MapLibre GL, dan **Nominatim** untuk nama tempat & pencarian. Nominatim hanya dipanggil
+saat tombol/Enter ditekan, sesuai aturan pakainya (maks. 1 permintaan/detik, tanpa autocomplete). MapLibre (±250 kB)
+dimuat hanya saat peta dibuka; worker-nya disalin webpack sebagai aset (`setWorkerUrl` di `components/village/map/JajanMap.tsx`).
 
 **Butuh kolom baru di database.** Kolom `placeName`, `latitude`, `longitude` di `Expense` dimiliki repo tepira
 (migrasi `20261012150000_add_expense_place`). Urutan rilis:
@@ -124,7 +134,8 @@ lib/
   wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
   quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
-  places.ts               peta jajan: pencocokan tempat, pengelompokan per tempat, warna kategori
+  places.ts               peta jajan: pencocokan tempat, pengelompokan per tempat, warna & ikon kategori, ringkasan
+                          sidebar (langganan, pertama kali, tanpa tempat), penggabungan penanda berdekatan
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
@@ -137,8 +148,9 @@ components/village/
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
                           StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
+  map/                    peta jajan: gameStyle (gaya peta desa siang/senja/malam), JajanMap (MapLibre + penanda)
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
-                          Surat / Peta jajan), SalaryPanel, PlacePicker, JajanMap (MapLibre), PinGate, Tutorial
+                          Surat), JajanView (peta jajan layar penuh), SalaryPanel, PlacePicker, PinGate, Tutorial
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
