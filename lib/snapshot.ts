@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
-import { healthStatusFor, type SalaryView, type Snapshot } from "@/lib/game";
+import { ACTIVITY_WINDOW_DAYS, DAY_MS, healthStatusFor, wibDay, type SalaryView, type Snapshot } from "@/lib/game";
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -60,8 +60,9 @@ export async function isNewVillager(userId: string) {
 export async function buildSnapshot(userId: string, month: number, year: number): Promise<Snapshot> {
   const ownerWhere = userOwnedWhere(userId);
   const { start, end } = monthRange(month, year);
+  const activitySince = new Date(Date.now() - (ACTIVITY_WINDOW_DAYS + 1) * DAY_MS);
 
-  const [user, goals, wallets, expenses, salary, bonus, balance, previousSalary] = await Promise.all([
+  const [user, goals, wallets, expenses, salary, bonus, balance, previousSalary, activityExpenses, insight] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, image: true } }),
     prisma.goal.findMany({
       where: ownerWhere,
@@ -89,6 +90,14 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       where: { userId, OR: [{ year: { lt: year } }, { year, month: { lt: month } }] },
       include: { allocations: { orderBy: { id: "asc" } } },
       orderBy: [{ year: "desc" }, { month: "desc" }]
+    }),
+    // Tanggal saja, untuk lampu streak & warga (computeStreak di lib/game.ts).
+    prisma.expense.findMany({ where: { date: { gte: activitySince }, ...ownerWhere }, select: { date: true } }),
+    // Surat mingguan: insight terbaru sampai bulan yang dilihat. Dibungkus AND supaya OR milik
+    // userOwnedWhere tidak tertimpa OR periode.
+    prisma.weeklyFinancialInsight.findFirst({
+      where: { AND: [ownerWhere, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] },
+      orderBy: { weekStart: "desc" }
     })
   ]);
 
@@ -131,6 +140,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
   }
 
   const totalSaved = allContributions.reduce((s, c) => s + c.amount, 0);
+
+  const activity = new Set<number>();
+  for (const e of activityExpenses) activity.add(wibDay(e.date));
+  for (const c of allContributions) if (c.date >= activitySince) activity.add(wibDay(c.date));
 
   return {
     user: { name: user?.name ?? null, email: user?.email ?? null, image: user?.image ?? null },
@@ -201,6 +214,19 @@ export async function buildSnapshot(userId: string, month: number, year: number)
     salary: salary ? salaryView(salary) : null,
     previousSalary: previousSalary
       ? { ...salaryView(previousSalary), month: previousSalary.month, year: previousSalary.year }
+      : null,
+    activityDays: [...activity].sort((a, b) => a - b),
+    insight: insight
+      ? {
+          id: insight.id,
+          weekStart: insight.weekStart.toISOString(),
+          weekEnd: insight.weekEnd.toISOString(),
+          healthScore: insight.healthScore,
+          status: insight.status,
+          summary: insight.summary,
+          // Sama seperti halaman Laporan tepira: JSON berisi daftar kalimat.
+          recommendations: Array.isArray(insight.recommendations) ? insight.recommendations.map(String) : []
+        }
       : null,
     totals: {
       totalSaved,

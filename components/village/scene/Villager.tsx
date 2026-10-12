@@ -3,9 +3,9 @@
 import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { HALL, POND, WALLET_ROW } from "../layout";
+import { HALL } from "../layout";
 import { useVillage } from "../store";
-import { insideIsland } from "./geometry";
+import { randomWanderTarget } from "./geometry";
 import { labelRegistry } from "./labels";
 
 interface Runtime {
@@ -24,17 +24,6 @@ interface Runtime {
 }
 
 const SPEED = 2.6;
-
-function randomWanderTarget(): [number, number] {
-  for (let i = 0; i < 30; i++) {
-    const x = (Math.random() * 2 - 1) * 20;
-    const z = (Math.random() * 2 - 1) * 15;
-    const inPond = Math.hypot((POND.x - x) / (POND.rx + 1), (POND.z - z) / (POND.rz + 1)) < 1;
-    const inWallets = z < WALLET_ROW.z + 2.5;
-    if (insideIsland(x, z, 0.8) && !inPond && !inWallets) return [x, z];
-  }
-  return [0, 4];
-}
 
 /** Si penabung: berjalan-jalan di desa, bergegas ke goal saat nabung dan ke warung saat belanja. */
 export default function Villager() {

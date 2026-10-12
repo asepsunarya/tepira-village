@@ -1,9 +1,13 @@
+import type { UnlockKey } from "@/lib/game";
 import type { TimeOfDay, TimePreset } from "./types";
 
 /**
  * Tata letak pulau. Semua posisi dalam satuan dunia (x ke kanan, z ke bawah
  * layar pada sudut isometrik default).
  */
+
+/** Permukaan laut; pulau menjulang dari sini sampai y = 0. */
+export const SEA_Y = -3.2;
 
 export const POND = { x: -13, z: -9, rx: 4.2, rz: 3.1 };
 
@@ -62,6 +66,47 @@ export const PATH_POINTS: [number, number][] = [
 ];
 
 export const TILE_COLORS = ["#fde2b8", "#f9d3c4", "#ffe9c9", "#f4d9d0"];
+
+/**
+ * Lampu jalan streak, satu per hari: indeks 0 = 6 hari lalu, indeks 6 = hari ini (depan Balai
+ * Desa), urut mengikuti jalan setapak. Semua di samping jalan dan sudah dicek tidak menabrak
+ * kavling mana pun (termasuk yang belum terpakai), balai, warung, dompet, maupun kolam.
+ */
+export const LAMP_POSTS: [number, number][] = [
+  [7.57, 6.71],
+  [13.67, 0.49],
+  [6.3, -5.89],
+  [1.27, -6.95],
+  [-9.65, -0.42],
+  [-3.15, 5.62],
+  [1.3, 3.6]
+];
+
+/** Kotak pos surat mingguan, di pelataran Balai Desa. */
+export const MAILBOX = { x: -3.3, z: 0.6, rot: 0.5 };
+
+// Bangunan yang terbuka per level (VILLAGE_UNLOCKS). Area-areanya sudah dikosongkan dari dekorasi
+// sejak awal supaya pohon tidak bergeser saat level naik.
+/** Dermaga di pantai barat daya; sumbu z lokal menjorok ke laut. */
+export const DOCK = { x: -10.4, z: 15.4, rot: Math.atan2(-0.6, 0.8) };
+/** Tiga lapak menghadap kamera, di antara warung dan kavling selatan. */
+export const MARKET = { x: 11.8, z: 13.5, rot: Math.PI / 4 };
+/** Mercusuar di tanjung timur. */
+export const LIGHTHOUSE = { x: 23.6, z: -1.2 };
+/** Pulau kedua di selatan, disambung jembatan dari pantai (z0 di darat, z1 di pulau kecil). */
+export const ISLET = { x: 3.4, z: 26.6, r: 4.2 };
+export const BRIDGE = { x: 3, z0: 16.6, z1: 22.8 };
+/** Balon udara berputar pelan di atas desa. */
+export const BALLOON = { x: -2, y: 13, z: 2, r: 6 };
+
+/** Titik di darat untuk papan "segera dibangun" dan toast saat terbuka. */
+export const UNLOCK_SPOTS: Record<UnlockKey, { x: number; z: number }> = {
+  dermaga: { x: DOCK.x + 0.3, z: DOCK.z - 0.6 },
+  pasar: { x: MARKET.x, z: MARKET.z },
+  mercusuar: { x: LIGHTHOUSE.x - 0.6, z: LIGHTHOUSE.z },
+  pulau: { x: BRIDGE.x, z: BRIDGE.z0 - 0.8 },
+  balon: { x: HALL.x, z: HALL.z }
+};
 
 export const TIME_PRESETS: Record<Exclude<TimeOfDay, "auto">, TimePreset> = {
   day: {

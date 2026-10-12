@@ -1,6 +1,7 @@
 import { SALARY_TEMPLATE_75, expenseCategories, getCategoryLabel, type ExpenseCategoryKey } from "@/lib/categories";
 import {
   healthStatusFor,
+  wibDay,
   type ContributionView,
   type ExpenseView,
   type GoalView,
@@ -102,6 +103,15 @@ function demoSalary(id: number): SalaryView {
 
 /** Alokasi gaji contoh (dipakai juga untuk ilustrasi di landing). */
 export const DEMO_SALARY = demoSalary(7001);
+
+/** Hari tercatat desa contoh: streak 5 hari sampai hari ini + deret 14 hari bulan lalu (2 warga). */
+function demoActivityDays(now: Date) {
+  const today = wibDay(now.getTime());
+  const days: number[] = [];
+  for (let d = today - 30; d <= today - 17; d++) days.push(d);
+  for (let d = today - 4; d <= today; d++) days.push(d);
+  return days;
+}
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -232,6 +242,8 @@ export function createDemoSnapshot(now = new Date()): Snapshot {
       expenses,
       salary: DEMO_SALARY,
       previousSalary: { ...demoSalary(7000), month: prev.getMonth() + 1, year: prev.getFullYear() },
+      activityDays: demoActivityDays(now),
+      insight: null,
       pinRequired: false,
       devLogin: false,
       generatedAt: now.toISOString()

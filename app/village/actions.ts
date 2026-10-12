@@ -80,6 +80,25 @@ export async function createGoal(
   });
 }
 
+/**
+ * Target tanggal goal. tepira hanya mengisinya saat goal dibuat; desa membolehkan mengatur atau
+ * menghapusnya belakangan supaya goal lama juga bisa dihitung "kejar deadline"-nya.
+ */
+export async function updateGoalDeadline(goalId: number, deadline: string | null, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const raw = clean(deadline);
+    const date = raw ? new Date(raw) : null;
+    if (raw && (!/^\d{4}-\d{2}-\d{2}$/.test(raw) || Number.isNaN(date!.getTime()))) {
+      throw new Error("Format tanggal tidak valid.");
+    }
+    const { count } = await prisma.goal.updateMany({
+      where: { id: toInt(goalId), ...userOwnedWhere(userId) },
+      data: { deadline: date }
+    });
+    if (!count) throw new Error("Goal tidak ditemukan.");
+  });
+}
+
 export async function deleteGoal(goalId: number, period: Period): Promise<ActionResult> {
   return run(period, async (userId) => {
     if (!goalId) return;

@@ -1,10 +1,21 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { buildStage, levelFor, levelTitle, villageXp, walletEmoji, xpForLevel } from "@/lib/game";
+import {
+  buildStage,
+  goalPace,
+  levelFor,
+  levelTitle,
+  nextUnlock,
+  villageXp,
+  walletEmoji,
+  xpForLevel,
+  type GoalPace
+} from "@/lib/game";
 import { formatCompact } from "@/lib/format";
-import { HALL, WARUNG, goalPalette, goalPlot, walletSpot } from "../layout";
+import { HALL, LAMP_POSTS, MAILBOX, UNLOCK_SPOTS, WARUNG, goalPalette, goalPlot, walletSpot } from "../layout";
 import { useMoneyVisible, useVillage } from "../store";
+import { useLetter, useStreak, useVillageXp } from "../useProgress";
 import { useWorldLabel, type Anchor } from "../scene/labels";
 
 function WorldLabel({
@@ -34,6 +45,23 @@ const STAGE_LABEL: Record<ReturnType<typeof buildStage>, string> = {
   selesai: "Selesai!"
 };
 
+/** Baris "kejar deadline" di label goal; null kalau goal tanpa target tanggal atau sudah selesai. */
+function PaceLine({ pace, moneyVisible }: { pace: GoalPace; moneyVisible: boolean }) {
+  const perWeek = moneyVisible ? `${formatCompact(pace.perWeek)}/mgg` : "••••/mgg";
+  switch (pace.status) {
+    case "ontrack":
+      return <div className="goal-label-pace ok">👷 {pace.catchingUp ? "Mengejar jadwal" : "Sesuai jadwal"} · {perWeek}</div>;
+    case "ahead":
+      return <div className="goal-label-pace ok">🚀 Lebih cepat · {perWeek}</div>;
+    case "behind":
+      return <div className="goal-label-pace behind">🌿 Telat jadwal · kejar {perWeek}</div>;
+    case "overdue":
+      return <div className="goal-label-pace behind">⏰ Lewat target {-pace.daysLeft} hari</div>;
+    default:
+      return null;
+  }
+}
+
 function GoalLabels() {
   const goals = useVillage((s) => s.snapshot?.goals ?? []);
   const selectedId = useVillage((s) => (s.panel === "goals" ? s.selectedGoalId : null));
@@ -46,6 +74,7 @@ function GoalLabels() {
         const done = goal.progress >= 1;
         const percent = Math.round(goal.progress * 100);
         const selected = selectedId === goal.id;
+        const pace = goalPace(goal);
         return (
           <WorldLabel key={goal.id} id={`goal-${goal.id}`} position={[plot.x, done ? 5.6 : 4.1, plot.z]}>
             <div className={`goal-label ${done ? "is-done" : ""} ${selected ? "is-selected" : ""}`}>
@@ -61,6 +90,7 @@ function GoalLabels() {
                 {moneyVisible ? `${formatCompact(goal.saved)} / ${formatCompact(goal.targetAmount)}` : "•••• / ••••"}
                 <span className="goal-label-stage">{STAGE_LABEL[buildStage(goal.progress)]}</span>
               </div>
+              <PaceLine pace={pace} moneyVisible={moneyVisible} />
             </div>
           </WorldLabel>
         );
@@ -171,6 +201,57 @@ function VillagerLabel() {
   );
 }
 
+/**
+ * Ajakan mencatat di atas lampu hari ini (depan Balai Desa). Hanya selama hari ini belum
+ * tercatat; setelahnya cukup lampunya yang menyala.
+ */
+function StreakLabel() {
+  const streak = useStreak();
+  if (streak.todayDone) return null;
+  const [x, z] = LAMP_POSTS[6];
+  return (
+    <WorldLabel id="streak" position={[x, 3.1, z]}>
+      <div className="name-pill streak-pill todo">
+        <span className="name-emoji">{streak.current > 0 ? "🔥" : "🕯️"}</span>
+        <span>{streak.current} hari</span>
+        <span className="lv">catat hari ini</span>
+      </div>
+    </WorldLabel>
+  );
+}
+
+function MailboxLabel() {
+  const { unread } = useLetter();
+  if (!unread) return null;
+  return (
+    <WorldLabel id="mailbox" position={[MAILBOX.x, 1.8, MAILBOX.z]}>
+      <div className="name-pill mail-pill">
+        <span className="name-emoji">💌</span>
+        <span>Surat baru</span>
+      </div>
+    </WorldLabel>
+  );
+}
+
+/** Papan "segera dibangun" di lokasi bangunan level berikutnya. */
+function NextUnlockLabel() {
+  const { level } = useVillageXp();
+  const next = nextUnlock(level);
+  if (!next || next.key === "balon") return null;
+  const spot = UNLOCK_SPOTS[next.key];
+  return (
+    <WorldLabel id="next-unlock" position={[spot.x, 2.0, spot.z]}>
+      <div className="name-pill sign-pill">
+        <span className="name-emoji">🔒</span>
+        <span>
+          {next.emoji} {next.name}
+        </span>
+        <span className="lv">Lv{next.level}</span>
+      </div>
+    </WorldLabel>
+  );
+}
+
 function ToastLabels() {
   const moneyVisible = useMoneyVisible();
   const toasts = useVillage((s) => s.toasts);
@@ -202,6 +283,9 @@ export default function LabelLayer() {
           <WarungLabel />
           <HallLabel />
           <VillagerLabel />
+          <StreakLabel />
+          <MailboxLabel />
+          <NextUnlockLabel />
         </>
       )}
       <ToastLabels />
