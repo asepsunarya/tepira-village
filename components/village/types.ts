@@ -10,6 +10,7 @@ export type Panel =
   | "letter"
   | "jajan"
   | "aliran"
+  | "journal"
   | null;
 
 /** Panel yang tampil layar penuh menutupi desa (scene berhenti merender, HUD dibuat inert). */

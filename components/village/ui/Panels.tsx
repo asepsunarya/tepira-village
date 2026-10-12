@@ -40,6 +40,7 @@ import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
 import JajanView from "./JajanView";
 import AliranView from "./AliranView";
+import JournalPanel from "./JournalPanel";
 import { PlaceLimitHint } from "./PlaceLimit";
 import { useLimitViews } from "../usePlaces";
 import { useSpeechSupported } from "../speech";
@@ -1283,6 +1284,7 @@ function VillagePanel() {
       <div className="chips">
         <button className="pill" onClick={() => setPanel("spend")}>💸 Catat pengeluaran</button>
         <button className="pill" onClick={() => setPanel("save")}>🪙 Nabung</button>
+        <button className="pill" onClick={() => setPanel("journal")}>📔 Jurnal tahun ini</button>
       </div>
 
       <section>
@@ -1403,7 +1405,8 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   village: "🏝️ Perkembangan desa",
   letter: "💌 Surat dari Cyrene",
   jajan: "🗺️ Peta jajan",
-  aliran: "🌊 Aliran uang"
+  aliran: "🌊 Aliran uang",
+  journal: "📔 Jurnal tahun ini"
 };
 
 export default function Panels() {
@@ -1424,6 +1427,7 @@ export default function Panels() {
       {panel === "month" && <MonthPanel />}
       {panel === "village" && <VillagePanel />}
       {panel === "letter" && <LetterPanel />}
+      {panel === "journal" && <JournalPanel />}
     </PanelShell>
   );
 }

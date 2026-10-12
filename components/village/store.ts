@@ -60,6 +60,11 @@ export interface UiSettings {
   freeze: boolean;
   /** suasana peta jajan; kosong (simpanan lama) = "desa" */
   mapTheme?: MapThemeSetting;
+  /**
+   * Matikan efek musim (hujan, pelangi, kunang-kunang, layangan, kupu-kupu, daun gugur). Sengaja
+   * negatif: kosong (simpanan lama) = efek nyala, dan toggleUi membalik `undefined` jadi true.
+   */
+  reduceFx?: boolean;
 }
 
 /** Tur desa (coach mark) untuk pengguna baru. Progres per user di localStorage, bukan di DB. */
@@ -105,7 +110,7 @@ interface State {
   openGoal: (goalId: number | null) => void;
   openWallet: (walletId: number | null) => void;
   setTime: (time: TimeOfDay) => void;
-  toggleUi: (key: "showLabels" | "hideMoney" | "freeze") => void;
+  toggleUi: (key: "showLabels" | "hideMoney" | "freeze" | "reduceFx") => void;
   setMapTheme: (theme: MapThemeSetting) => void;
   unlock: (pin: string) => Promise<boolean>;
   lock: () => void;

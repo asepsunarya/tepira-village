@@ -761,3 +761,57 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
   .tour-card, .tour-card.celebrate { animation: none; }
   .tour-card.center, .tour-card.center.celebrate { animation: none; }
 }
+
+/* ---------- jurnal & musim ---------- */
+/* Label bulan di kontrol atas = tombol jurnal. Emoji musim di ATAS nama bulan, bukan di sampingnya:
+   kontrol atas di 1400 px hanya punya sisa ±6 px untuk "September 2026", jadi lebar tombol harus tetap. */
+.seg-btn { height: 40px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; border-radius: 16px; transition: background 0.15s; }
+.seg-season { font-size: 12px; line-height: 1; }
+.seg-btn:hover { background: #fff; }
+.seg-btn.on { background: var(--pink-soft); color: #c2457d; box-shadow: inset 0 0 0 2px #ffbdd8; }
+.journal-season { display: flex; gap: 12px; align-items: flex-start; background: #fff; border-radius: 16px; padding: 12px; border: 2px solid #f6ebf0; }
+.journal-season.hujan { background: #e6f2fb; border-color: #c9e3f4; }
+.journal-season.panen { background: #fff5d6; border-color: #f6e0a0; }
+.journal-season.kemarau { background: #ffeedd; border-color: #f8d6ae; }
+.journal-season.mangga { background: #f1f8dc; border-color: #dbe9a8; }
+.journal-season-emoji { font-size: 34px; line-height: 1; flex-shrink: 0; }
+.journal-season b { font-size: 16px; font-weight: 900; }
+.journal-season p { margin: 4px 0 6px; font-size: 13px; font-weight: 700; }
+.journal-season small { font-size: 11px; }
+.journal-viewing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-color: #ffbdd8; }
+.journal-viewing span { flex: 1 1 180px; }
+.season-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+.season-chip { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; padding: 5px 0 4px; border-radius: 10px; border: 2px solid transparent; transition: transform 0.15s; }
+.season-chip span { font-size: 14px; line-height: 1.15; }
+.season-chip small { font-size: 9px; font-weight: 900; color: var(--ink-soft); }
+.season-chip.hujan { background: #e6f2fb; }
+.season-chip.panen { background: #fff5d6; }
+.season-chip.kemarau { background: #ffeedd; }
+.season-chip.mangga { background: #f1f8dc; }
+.season-chip:hover { transform: translateY(-1px); }
+.season-chip.on { border-color: #ff7eb3; }
+.season-chip.on small { color: #c2457d; }
+.season-chip.now::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #c2457d; }
+.habit-grid { display: flex; flex-direction: column; gap: 2px; background: #fff; border-radius: 14px; padding: 8px 6px; border: 2px solid #f6ebf0; }
+/* 360 px: isi panel ±300 px, titik ±6 px */
+.habit-row { display: grid; grid-template-columns: 24px repeat(31, minmax(0, 1fr)) 20px; gap: 1px; align-items: center; }
+.habit-row > small { font-size: 9px; font-weight: 900; color: var(--ink-soft); }
+.habit-row > .habit-count { grid-column: -2; text-align: right; }
+.habit-dot { display: block; width: 100%; max-width: 9px; aspect-ratio: 1; justify-self: center; border-radius: 50%; background: #f1eaee; }
+.habit-dot.recorded { background: #6cc8ad; }
+.habit-dot.nospend { background: #9aa6ee; }
+.habit-dot.missed { background: #e2cdd7; }
+.habit-dot.before { background: #f1eaee; }
+.habit-dot.future { background: transparent; box-shadow: inset 0 0 0 1px #e4d8df; }
+.habit-dot.today { box-shadow: 0 0 0 1.5px #ff7eb3; }
+.habit-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 4px; font-size: 11px; font-weight: 800; color: var(--ink-soft); }
+.habit-legend .habit-dot { display: inline-block; width: 8px; height: 8px; vertical-align: -1px; }
+.journal-fx { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 14px; padding: 8px 10px; border: 2px solid #f6ebf0; }
+.journal-fx .muted { flex: 1; }
+@media (max-width: 900px) {
+  .seg-btn { height: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seg-btn, .season-chip { transition: none; }
+  .season-chip:hover { transform: none; }
+}

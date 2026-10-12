@@ -4,8 +4,21 @@ import { useMemo } from "react";
 import { makeIslandGeometry } from "./geometry";
 import { POND, SEA_Y } from "../layout";
 
-/** `onPond`: klik kolam (desa membuka aliran uang). Landing tidak memakainya. */
-export default function Island({ sea, onPond }: { sea: string; onPond?: () => void }) {
+/**
+ * `onPond`: klik kolam (desa membuka aliran uang). `grass` & `pondScale`: tampilan musim, hanya diisi
+ * Scene.tsx; bawaannya sama dengan poster landing. Landing tidak memakai ketiganya.
+ */
+export default function Island({
+  sea,
+  onPond,
+  grass = "#a6dc78",
+  pondScale = 1
+}: {
+  sea: string;
+  onPond?: () => void;
+  grass?: string;
+  pondScale?: number;
+}) {
   const geometry = useMemo(makeIslandGeometry, []);
   return (
     <group>
@@ -15,7 +28,7 @@ export default function Island({ sea, onPond }: { sea: string; onPond?: () => vo
       </mesh>
 
       <mesh geometry={geometry} receiveShadow castShadow>
-        <meshStandardMaterial attach="material-0" color="#a6dc78" />
+        <meshStandardMaterial attach="material-0" color={grass} />
         <meshStandardMaterial attach="material-1" color="#f3d6c2" />
       </mesh>
 
@@ -27,7 +40,7 @@ export default function Island({ sea, onPond }: { sea: string; onPond?: () => vo
         <mesh
           rotation-x={-Math.PI / 2}
           position-y={0.02}
-          scale={[POND.rx, POND.rz, 1]}
+          scale={[POND.rx * pondScale, POND.rz * pondScale, 1]}
           onClick={
             onPond &&
             ((e) => {
