@@ -13,6 +13,10 @@ import WalletChest from "./WalletChest";
 import Warung from "./Warung";
 import Hall from "./Hall";
 import Villager from "./Villager";
+import StreetLamps from "./StreetLamps";
+import Townsfolk from "./Townsfolk";
+import Unlocks from "./Unlocks";
+import Mailbox from "./Mailbox";
 import { Clouds } from "./Effects";
 import LabelProjector from "./LabelProjector";
 
@@ -105,12 +109,16 @@ export default function Scene() {
 
       <Island sea={p.sea} />
       <Path />
-      <Decor usedPlots={goalCount} walletCount={walletCount} />
+      <Decor usedPlots={goalCount} walletCount={walletCount} reserved />
       <Hall lit={p.windows} />
       <Warung lit={p.windows} />
       <Goals lit={p.windows} />
       <Wallets />
+      <StreetLamps night={p.windows} />
+      <Mailbox />
+      <Unlocks night={p.windows} />
       <Villager />
+      <Townsfolk />
       <LabelProjector />
       {time === "cloudy" && <Clouds count={9} tint="#f4f6fa" opacity={0.95} />}
       {time === "day" && <Clouds count={4} />}

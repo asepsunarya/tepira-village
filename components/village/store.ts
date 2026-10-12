@@ -2,11 +2,21 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  NOSPEND_BACKFILL_DAYS,
+  VILLAGE_UNLOCKS,
+  VILLAGER_NAMES,
+  computeStreak,
+  levelFor,
+  villageXp,
+  wibDay
+} from "@/lib/game";
 import type { ActionResult, Snapshot } from "@/lib/game";
 import * as actions from "@/app/village/actions";
 import type { Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
-import { HALL, WARUNG, goalPlot } from "./layout";
+import { HALL, LAMP_POSTS, UNLOCK_SPOTS, WARUNG, goalPlot } from "./layout";
 import { formatCompact } from "@/lib/format";
+import { readLetter, readNoSpend, readSeen, writeLetter, writeNoSpend, writeSeen } from "./daily";
 import {
   NO_HITS,
   captureBaseline,
@@ -54,6 +64,10 @@ interface State {
   villagerTarget: VillagerTarget | null;
   viewNonce: number;
   celebrateGoalId: number | null;
+  /** Hari "nol pengeluaran" (hari WIB) milik user yang login; disimpan di browser (daily.ts). */
+  noSpendDays: number[];
+  /** Kunci surat terakhir yang sudah dibuka (letterKey di daily.ts). */
+  letterRead: string | null;
 
   hydrate: (snapshot: Snapshot) => void;
   setPanel: (panel: Panel) => void;
@@ -70,6 +84,8 @@ interface State {
 
   refresh: () => Promise<void>;
   createGoal: (input: Parameters<typeof actions.createGoal>[0]) => Promise<boolean>;
+  /** Atur (yyyy-mm-dd) atau hapus (null) target tanggal goal. */
+  updateGoalDeadline: (goalId: number, deadline: string | null) => Promise<boolean>;
   deleteGoal: (goalId: number) => Promise<void>;
   save: (input: { goalId: number; amount: number; note?: string }) => Promise<boolean>;
   deleteContribution: (id: number) => Promise<void>;
@@ -83,6 +99,9 @@ interface State {
   saveSalary: (input: Parameters<typeof actions.saveSalaryAllocation>[0]) => Promise<boolean>;
   /** Hapus baris alokasi yang sedang dilihat (id dari snapshot.salary). */
   deleteSalary: (salaryId: number) => Promise<void>;
+  /** Tandai/batalkan "nol pengeluaran" untuk satu hari WIB (lampunya ikut menyala). */
+  toggleNoSpend: (day: number) => void;
+  markLetterRead: (key: string) => void;
 
   tour: TourState;
   /** Setoran & pengeluaran yang berhasil sejak halaman dibuka (untuk tur). */
@@ -126,6 +145,7 @@ export const useVillage = create<State>()(
       const apply = (result: ActionResult) => {
         if (result.ok) {
           set({ snapshot: result.snapshot, loading: false, error: null });
+          celebrateSoon();
           return true;
         }
         fail(result.message);
@@ -148,6 +168,41 @@ export const useVillage = create<State>()(
       const walkTo = (x: number, z: number, kind: VillagerTarget["kind"]) =>
         set((s) => ({ villagerTarget: { x, z, kind, nonce: (s.villagerTarget?.nonce ?? 0) + 1 } }));
 
+      /**
+       * Rayakan warga baru & bangunan level yang baru terbuka, sekali per user: yang sudah dirayakan
+       * diingat di browser. Pertama kali (belum ada catatan) hanya mencatat diam-diam.
+       */
+      const celebrate = () => {
+        const s = get().snapshot;
+        if (!s) return;
+        const owner = tourOwner(s);
+        const villagers = computeStreak(s.activityDays, get().noSpendDays, wibDay(Date.now())).villagers;
+        const level = levelFor(villageXp(s.totals.totalSaved, s.totals.contributionCount));
+        const seen = readSeen(owner);
+        if (!seen) {
+          writeSeen(owner, { villagers, level });
+          return;
+        }
+        const news: string[] = [];
+        if (villagers > seen.villagers) {
+          const names = VILLAGER_NAMES.slice(seen.villagers, villagers).join(" & ");
+          news.push(`🧑‍🌾 ${names} pindah ke desa!`);
+          pushToast({ x: HALL.x, z: HALL.z + 3.2, y: 4.2, text: "🧑‍🌾 Warga baru!", sub: names, tone: "info" });
+        }
+        for (const u of VILLAGE_UNLOCKS.filter((u) => u.level > seen.level && u.level <= level)) {
+          news.push(`${u.emoji} ${u.name} terbuka!`);
+          const spot = UNLOCK_SPOTS[u.key];
+          pushToast({ x: spot.x, z: spot.z, y: 4.6, text: `${u.emoji} ${u.name} terbuka!`, sub: `Level ${u.level}`, tone: "info" });
+        }
+        if (news.length) notify(news.join(" "));
+        // Yang sempat berkurang (mis. setoran dihapus) tidak dirayakan ulang saat naik lagi.
+        if (villagers > seen.villagers || level > seen.level) {
+          writeSeen(owner, { villagers: Math.max(villagers, seen.villagers), level: Math.max(level, seen.level) });
+        }
+      };
+      /** Ditunda sebentar supaya pesan aksinya ("setoran tercatat" dst.) sempat terbaca dulu. */
+      const celebrateSoon = () => setTimeout(celebrate, 1600);
+
       return {
         snapshot: null,
         loading: false,
@@ -162,13 +217,23 @@ export const useVillage = create<State>()(
         villagerTarget: null,
         viewNonce: 0,
         celebrateGoalId: null,
+        noSpendDays: [],
+        letterRead: null,
         tour: IDLE_TOUR,
         tourHits: NO_HITS,
 
         hydrate: (snapshot) => {
           const unlockedBefore =
             typeof window !== "undefined" && sessionStorage.getItem("tepira_village_unlocked") === "true";
-          set({ snapshot, unlocked: snapshot.pinRequired ? unlockedBefore : true });
+          const owner = tourOwner(snapshot);
+          set({
+            snapshot,
+            unlocked: snapshot.pinRequired ? unlockedBefore : true,
+            noSpendDays: readNoSpend(owner),
+            letterRead: readLetter(owner)
+          });
+          // Warga/bangunan yang bertambah sejak kunjungan terakhir (mis. mencatat lewat tepira.id).
+          setTimeout(celebrate, 900);
         },
         setPanel: (panel) => set({ panel }),
         openGoal: (goalId) => set({ selectedGoalId: goalId, panel: goalId ? "goals" : get().panel }),
@@ -222,6 +287,11 @@ export const useVillage = create<State>()(
         createGoal: async (input) => {
           const ok = await mutate(() => actions.createGoal(input, period()));
           if (ok) notify(`Kavling baru dibuka: "${input.title}" 🏗️`);
+          return ok;
+        },
+        updateGoalDeadline: async (goalId, deadline) => {
+          const ok = await mutate(() => actions.updateGoalDeadline(goalId, deadline, period()));
+          if (ok) notify(deadline ? "Target tanggal disimpan 🗓️" : "Target tanggal dihapus.");
           return ok;
         },
         deleteGoal: async (goalId) => {
@@ -319,6 +389,29 @@ export const useVillage = create<State>()(
         deleteSalary: async (salaryId) => {
           const ok = await mutate(() => actions.deleteSalaryAllocation(salaryId, period()));
           if (ok) notify("Alokasi gaji bulan ini dihapus.");
+        },
+
+        toggleNoSpend: (day) => {
+          const s = get().snapshot;
+          if (!s) return;
+          const today = wibDay(Date.now());
+          const current = get().noSpendDays;
+          const had = current.includes(day);
+          // Membatalkan selalu boleh; menandai hanya dalam batas mundur.
+          if (!had && (day > today || day < today - NOSPEND_BACKFILL_DAYS)) return;
+          const days = writeNoSpend(tourOwner(s), had ? current.filter((d) => d !== day) : [...current, day], today);
+          set({ noSpendDays: days });
+          if (had) return;
+          const lamp = LAMP_POSTS[6 - (today - day)];
+          if (lamp) pushToast({ x: lamp[0], z: lamp[1], y: 3.4, text: "💡", sub: "Nol pengeluaran", tone: "info" });
+          notify(day === today ? "🌙 Hari ini ditandai nol pengeluaran. Lampunya menyala!" : "🌙 Hari itu ditandai nol pengeluaran.");
+          celebrateSoon();
+        },
+        markLetterRead: (key) => {
+          const s = get().snapshot;
+          if (!s || get().letterRead === key) return;
+          writeLetter(tourOwner(s), key);
+          set({ letterRead: key });
         },
 
         initTour: (isNew) => {

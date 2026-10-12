@@ -2,13 +2,13 @@
 
 import { useMemo } from "react";
 import { makeIslandGeometry } from "./geometry";
-import { POND } from "../layout";
+import { POND, SEA_Y } from "../layout";
 
 export default function Island({ sea }: { sea: string }) {
   const geometry = useMemo(makeIslandGeometry, []);
   return (
     <group>
-      <mesh rotation-x={-Math.PI / 2} position-y={-3.2} receiveShadow>
+      <mesh rotation-x={-Math.PI / 2} position-y={SEA_Y} receiveShadow>
         <planeGeometry args={[3000, 3000]} />
         <meshStandardMaterial color={sea} />
       </mesh>

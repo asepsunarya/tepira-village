@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { levelFor, levelTitle, villageXp, xpForLevel } from "@/lib/game";
+import { levelFor, levelTitle, nextUnlock, villageXp, xpForLevel } from "@/lib/game";
 import { monthLabel } from "@/lib/format";
 import { signOutAction } from "@/app/village/actions";
 import { LogoMark } from "@/components/brand/Logo";
 import { useVillage } from "../store";
 import type { Panel, TimeOfDay } from "../types";
+import { useStreak } from "../useProgress";
 import { Money } from "./Money";
 
 const TIMES: { key: TimeOfDay; icon: string; label: string }[] = [
@@ -42,6 +43,7 @@ export default function HUD() {
   const shiftPeriod = useVillage((s) => s.shiftPeriod);
   const lock = useVillage((s) => s.lock);
   const startTour = useVillage((s) => s.startTour);
+  const streak = useStreak();
   const [menu, setMenu] = useState(false);
 
   if (!snapshot) return null;
@@ -56,6 +58,8 @@ export default function HUD() {
   const score = summary.health.score;
   const scoreTone = score >= 85 ? "great" : score >= 70 ? "good" : score >= 55 ? "ok" : "bad";
   const moneyShown = unlocked && !ui.hideMoney;
+  const upcoming = nextUnlock(level);
+  const toggleVillage = () => setPanel(panel === "village" ? null : "village");
 
   return (
     <>
@@ -84,10 +88,17 @@ export default function HUD() {
           </button>
         </div>
 
-        <div className="level-row">
+        <div className="level-row clickable" onClick={toggleVillage} role="button" title="Bangunan yang terbuka per level">
           <span className="lv big">Lv{level}</span>
           <div className="level-main">
-            <div className="level-title">{levelTitle(level)}</div>
+            <div className="level-title">
+              {levelTitle(level)}
+              {upcoming && (
+                <span className="level-next">
+                  · {upcoming.emoji} {upcoming.name} di Lv{upcoming.level}
+                </span>
+              )}
+            </div>
             <div className="bar thin">
               <div style={{ width: `${xpPct}%`, background: "#f3c35b" }} />
             </div>
@@ -98,6 +109,22 @@ export default function HUD() {
             </small>
           </div>
         </div>
+
+        <button
+          className={`streak-row ${streak.todayDone ? "done" : "todo"}`}
+          onClick={toggleVillage}
+          title="Lampu streak & warga desa"
+          data-tour="hud-streak"
+        >
+          <span className="streak-fire">{streak.current > 0 ? "🔥" : "🕯️"}</span>
+          <span className="streak-main">
+            <b>{streak.current}</b> hari beruntun
+          </span>
+          <span className="streak-today">{streak.todayDone ? "hari ini ✓" : "catat hari ini"}</span>
+          <span className="streak-folk" title="Warga desa">
+            🧑‍🌾 {streak.villagers}
+          </span>
+        </button>
 
         <div className="stat-grid">
           <div className="stat-tile save">

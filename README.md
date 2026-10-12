@@ -22,9 +22,41 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | Alokasi gaji                  | Panel 💰 Gaji: bagi gaji ke 9 kategori + tabungan (total harus pas), jatah vs realisasi per kategori. Disimpan dengan aturan `createSalaryBudget` tepira |
 | Bonus / saldo awal            | Dibaca untuk sisa budget & skor; masih diatur lewat tepira.id           |
 | Skor kesehatan (Laporan)      | Cincin skor di Balai Desa + cuaca otomatis (≥70 cerah, ≥55 berawan, <55 senja) |
+| Target tanggal goal           | Kejar deadline: tukang bekerja kalau sesuai jadwal, rumput liar tumbuh kalau telat, plus "Rp…/minggu" |
+| Insight mingguan (Laporan)    | Surat dari Cyrene di kotak pos Balai Desa; benderanya naik kalau ada surat baru |
 | —                             | Level desa: 1 XP per Rp10.000 ditabung + 5 XP per setoran               |
+| —                             | Bangunan level: dermaga (Lv4), pasar (Lv8), mercusuar (Lv15), pulau kedua (Lv25), balon udara (Lv40) |
+| —                             | Lampu jalan streak: satu per hari tercatat (7 hari terakhir); tiap 7 hari beruntun satu warga pindah ke desa |
 
-Level & XP dihitung di client dari data yang sudah ada (tidak menambah tabel baru).
+Level, XP, streak, dan warga dihitung di client dari data yang sudah ada (tidak menambah tabel baru).
+
+## Loop harian
+
+Supaya desa punya alasan dibuka setiap hari, bukan hanya saat menabung:
+
+- **Streak catatan.** Hari "tercatat" = ada pengeluaran atau setoran bertanggal hari itu, atau ditandai
+  **nol pengeluaran** (tombol di panel Catat / panel desa) supaya hari hemat tidak memutus streak. Yang dihargai
+  kebiasaan mencatat, bukan besar belanjanya. Tujuh lampu di samping jalan setapak mewakili 7 hari terakhir; lampu
+  hari ini ada di depan Balai Desa dan berdenyut selama hari ini belum tercatat. Mencatat dengan tanggal kemarin
+  tetap menyalakan lampu kemarin.
+- **Warga.** Tiap kali satu deret mencapai kelipatan 7 hari, satu warga (Ujang, Euis, Dadang, …, maks. 8) pindah
+  ke desa dan menetap walaupun streak-nya kemudian putus.
+- **Bangunan level.** Ambangnya sama dengan pergantian gelar (`levelTitle`). Lokasi bangunan berikutnya ditandai
+  papan + patok bertali; areanya dikosongkan dari pohon sejak awal supaya dekorasi tidak bergeser saat level naik.
+- **Kejar deadline.** Garis jadwal ditarik lurus dari goal dibuat sampai target tanggal. Goal dianggap telat hanya
+  kalau progresnya di bawah garis **dan** setoran 28 hari terakhir belum cukup cepat, jadi goal lama yang target
+  tanggalnya baru diatur tidak langsung dicap telat. Target tanggal bisa diatur/diubah di detail goal (tepira hanya
+  mengisinya saat goal dibuat).
+- **Surat mingguan.** Insight terbaru dari tabel `WeeklyFinancialInsight` (cron tepira tiap Senin 08:00 WIB) sampai
+  bulan yang dilihat. Akun tanpa insight tersimpan mendapat pratinjau dari angka bulan itu, sama seperti "Preview
+  bulan ini" di halaman Laporan tepira (kalimatnya port dari `buildCyreneInsight`).
+- **Perayaan.** Warga baru dan bangunan yang baru terbuka dirayakan sekali (notifikasi + toast di lokasinya),
+  termasuk yang bertambah sejak kunjungan terakhir.
+
+Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server hanya
+mengirim daftar hari yang punya catatan (`activityDays`, 400 hari terakhir). Tanda nol pengeluaran (hari ini dan
+2 hari sebelumnya), surat yang sudah dibuka, dan warga/level yang sudah dirayakan disimpan per user di
+`localStorage` (`components/village/daily.ts`), jadi belum ikut pindah antar perangkat.
 
 ## Arsitektur
 
@@ -34,20 +66,24 @@ app/
   landing.css             gaya landing & login, di-scope ke .lp (body tetap overflow:hidden untuk /village)
   login/page.tsx          login Google (Auth.js v5), opsional dev-login
   village/page.tsx        server component: auth + buildSnapshot → <VillageApp/>
-  village/actions.ts      server actions: nabung, catat pengeluaran, goal, dompet, alokasi gaji (semua balikin snapshot baru)
+  village/actions.ts      server actions: nabung, catat pengeluaran, goal (+ target tanggal), dompet, alokasi gaji (semua balikin snapshot baru)
   api/auth/[...nextauth]  handler Auth.js
 lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
   wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
-  game.ts                 tipe Snapshot, level/XP, tahap bangunan
+  game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
 components/village/
   store.ts                zustand: snapshot dari server + preferensi visual (localStorage)
-  layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, preset cuaca
-  scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager
+  daily.ts                localStorage per user: tanda nol pengeluaran, surat terbaca, perayaan yang sudah tampil
+  useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini
+  layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
+  scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
+                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
-  ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini), SalaryPanel, PinGate, Tutorial
+  ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
+                          Surat), SalaryPanel, PinGate, Tutorial
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
@@ -101,7 +137,8 @@ tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
 createdb tepira_village_dev
 # .env → DATABASE_URL="postgresql://localhost:5432/tepira_village_dev", DEV_LOGIN_EMAIL="dev@tepira.local"
 npm run db:push:dev      # membuat tabel dari salinan skema (HANYA untuk DB lokal)
-npm run seed:dev         # data contoh: 4 goal, 4 dompet, alokasi gaji, beberapa pengeluaran
+npm run seed:dev         # data contoh: 4 goal (1 telat jadwal, 1 lebih cepat), 4 dompet, alokasi gaji,
+                         # pengeluaran hampir tiap hari (streak + 3 warga), 1 insight mingguan
 npm run dev              # /login → tombol "Dev login (tanpa Google)"
 ```
 
@@ -153,5 +190,6 @@ tidak menangkap klik).
 
 - Drag untuk memutar, scroll/pinch untuk zoom, klik kanan/⇧+drag untuk geser. 🎯 Reset view mengembalikan sudut awal.
 - Klik bangunan goal → detail goal. Klik peti → dompet. Klik warung → catat pengeluaran. Klik balai desa / si penabung → ringkasan bulan.
+- Klik lampu, warga, bangunan level, atau baris 🔥 di kartu kiri atas → perkembangan desa. Klik kotak pos → surat mingguan.
 - ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`).
 - 👁️ / 🙈 untuk menyembunyikan angka (mode privasi), 🪄 cuaca otomatis mengikuti skor kesehatan.

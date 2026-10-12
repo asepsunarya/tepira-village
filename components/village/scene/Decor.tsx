@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { GOAL_PLOTS, HALL, POND, WALLET_ROW, WARUNG } from "../layout";
+import { BRIDGE, DOCK, GOAL_PLOTS, HALL, LAMP_POSTS, LIGHTHOUSE, MARKET, POND, WALLET_ROW, WARUNG } from "../layout";
 import { distToPath, insideIsland, mulberry32 } from "./geometry";
 
 type Kind = "tree" | "pine" | "candy" | "bush" | "mushroom" | "flower" | "rock";
@@ -18,7 +18,7 @@ const GREENS = ["#7fcf6b", "#6abf5e", "#93d97c", "#5fb573", "#a6e38f"];
 const CANDY = ["#f78fb3", "#ff6b6b", "#ffb3c6", "#c99cff"];
 const FLOWERS = ["#ff8fb1", "#ffd166", "#ffffff", "#c3a0ff", "#ff9f68"];
 
-function makeClear(usedPlots: number, walletCount: number) {
+function makeClear(usedPlots: number, walletCount: number, reserved: boolean) {
   return (x: number, z: number, pad: number) => {
     if (!insideIsland(x, z, 0.93)) return false;
     if (distToPath(x, z) < 1.4 + pad * 0.4) return false;
@@ -33,13 +33,20 @@ function makeClear(usedPlots: number, walletCount: number) {
       if (x > WALLET_ROW.x0 - 2 - pad && x < x1 + 2 + pad && Math.abs(z - WALLET_ROW.z) < 2.4 + pad) return false;
     }
     if (Math.hypot((POND.x - x) / (POND.rx + 1.2), (POND.z - z) / (POND.rz + 1.2)) < 1) return false;
+    if (!reserved) return true;
+    if (LAMP_POSTS.some(([lx, lz]) => Math.hypot(lx - x, lz - z) < 1 + pad)) return false;
+    // Lokasi bangunan level selalu dikosongkan (juga sebelum terbuka) supaya pohon tidak bergeser saat level naik.
+    if (Math.hypot(MARKET.x - x, MARKET.z - z) < 3.6 + pad) return false;
+    if (Math.hypot(LIGHTHOUSE.x - x, LIGHTHOUSE.z - z) < 2.4 + pad) return false;
+    if (Math.hypot(DOCK.x - x, DOCK.z - z) < 2.2 + pad) return false;
+    if (Math.abs(BRIDGE.x - x) < 1.6 + pad && z > BRIDGE.z0 - 1.8 - pad) return false;
     return true;
   };
 }
 
-function layout(usedPlots: number, walletCount: number): Item[] {
+function layout(usedPlots: number, walletCount: number, reserved: boolean): Item[] {
   const rnd = mulberry32(20261008);
-  const clear = makeClear(usedPlots, walletCount);
+  const clear = makeClear(usedPlots, walletCount, reserved);
   const items: Item[] = [];
   const place = (kind: Kind, count: number, pad: number, colors: string[], smin: number, smax: number) => {
     let tries = 0;
@@ -71,8 +78,20 @@ function layout(usedPlots: number, walletCount: number): Item[] {
   return items;
 }
 
-export default function Decor({ usedPlots, walletCount }: { usedPlots: number; walletCount: number }) {
-  const items = useMemo(() => layout(usedPlots, walletCount), [usedPlots, walletCount]);
+/**
+ * `reserved`: kosongkan juga tempat lampu streak & bangunan level. Desa contoh di landing tidak
+ * memakainya supaya tata letaknya tetap sama dengan poster (public/landing/village-poster.png).
+ */
+export default function Decor({
+  usedPlots,
+  walletCount,
+  reserved = false
+}: {
+  usedPlots: number;
+  walletCount: number;
+  reserved?: boolean;
+}) {
+  const items = useMemo(() => layout(usedPlots, walletCount, reserved), [usedPlots, walletCount, reserved]);
   return (
     <group>
       {items.map((it, i) => (

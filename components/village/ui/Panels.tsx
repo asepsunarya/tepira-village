@@ -1,8 +1,20 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import type { ContributionView, ExpenseView, GoalView, WalletView } from "@/lib/game";
-import { WALLET_TYPES, buildStage, walletEmoji } from "@/lib/game";
+import type { ContributionView, ExpenseView, GoalPace, GoalView, WalletView } from "@/lib/game";
+import {
+  MAX_VILLAGERS,
+  NOSPEND_BACKFILL_DAYS,
+  VILLAGER_NAMES,
+  VILLAGE_UNLOCKS,
+  WALLET_TYPES,
+  buildStage,
+  goalPace,
+  previewInsight,
+  walletEmoji,
+  wibDayDate,
+  xpForLevel
+} from "@/lib/game";
 import { expenseCategories } from "@/lib/categories";
 import {
   dateInputValue,
@@ -13,7 +25,8 @@ import {
   timeAgo,
   todayInputValue
 } from "@/lib/format";
-import { useVillage } from "../store";
+import { useMoneyVisible, useVillage } from "../store";
+import { useLetter, useStreak, useVillageXp } from "../useProgress";
 import { Money } from "./Money";
 import { AmountInput, CATEGORY_GROUPS } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
@@ -51,14 +64,24 @@ function PanelShell({ title, children, onClose }: { title: string; children: Rea
 
 // ── Goals ────────────────────────────────────────────────────────────────────
 
+const PACE_CHIP: Partial<Record<GoalPace["status"], { text: string; tone: string }>> = {
+  ontrack: { text: "sesuai jadwal", tone: "ok" },
+  ahead: { text: "lebih cepat", tone: "ok" },
+  behind: { text: "telat jadwal", tone: "behind" },
+  overdue: { text: "lewat target", tone: "behind" }
+};
+
 function GoalRow({ goal, selected, onSelect }: { goal: GoalView; selected: boolean; onSelect: () => void }) {
   const pct = Math.round(goal.progress * 100);
   const done = goal.progress >= 1;
+  const pace = goalPace(goal);
+  const chip = pace.catchingUp ? { text: "mengejar jadwal", tone: "ok" } : PACE_CHIP[pace.status];
   return (
     <div className={`task-row ${selected ? "on" : ""} ${done ? "status-done" : ""}`} onClick={onSelect} role="button">
       <div className="task-main">
         <div className="task-title">
           {done ? "🏡" : "🏗️"} {goal.title} <span className="status-chip">{pct}%</span>
+          {chip && <span className={`pace-chip ${chip.tone}`}>{chip.text}</span>}
         </div>
         <div className="task-meta">
           <Money value={goal.saved} /> <span className="muted">dari</span> <Money value={goal.targetAmount} />
@@ -104,6 +127,8 @@ function GoalDetail({ goal }: { goal: GoalView }) {
         <div><small>Setoran</small><b>{goal.contributions.length}x</b></div>
       </div>
       <p className="stage-note">🏗️ {stageText[stage]}</p>
+      <PaceNote goal={goal} />
+      {goal.progress < 1 && <DeadlineEditor goal={goal} />}
       {goal.progress < 1 && (
         <button className="primary" onClick={() => setPanel("save")}>🪙 Nabung ke goal ini</button>
       )}
@@ -142,6 +167,102 @@ function GoalDetail({ goal }: { goal: GoalView }) {
         )}
       </section>
     </>
+  );
+}
+
+/** "Kejar deadline": seberapa jauh dari jadwal dan berapa yang perlu disetor per minggu. */
+function PaceNote({ goal }: { goal: GoalView }) {
+  const pace = goalPace(goal);
+  const due = goal.deadline ? shortDate(goal.deadline) : "";
+  const when = pace.daysLeft === 0 ? "hari ini" : `${pace.daysLeft} hari lagi`;
+  const perWeek = (
+    <>
+      <b><Money value={pace.perWeek} /></b>/minggu (≈ <Money value={pace.perMonth} />/bulan)
+    </>
+  );
+  switch (pace.status) {
+    case "none":
+      return <p className="pace-note">🗓️ Belum ada target tanggal, jadi desa belum bisa menghitung setoran per minggu.</p>;
+    case "ontrack":
+      return pace.catchingUp ? (
+        <p className="pace-note ok">
+          👷 Sedang mengejar jadwal: setoran 4 minggu terakhir sudah cukup cepat. Target {due} ({when}): pertahankan{" "}
+          {perWeek}.
+        </p>
+      ) : (
+        <p className="pace-note ok">
+          👷 Sesuai jadwal. Target {due} ({when}): setor {perWeek} supaya tepat waktu.
+        </p>
+      );
+    case "ahead":
+      return (
+        <p className="pace-note ok">
+          🚀 Lebih cepat dari jadwal! Target {due} ({when}) cukup dengan {perWeek}.
+        </p>
+      );
+    case "behind":
+      return (
+        <p className="pace-note behind">
+          🌿 Telat dari jadwal: seharusnya sudah {Math.round(pace.expected * 100)}%, sekarang {Math.round(goal.progress * 100)}%.
+          Kejar dengan {perWeek} sampai {due}.
+        </p>
+      );
+    case "overdue":
+      return (
+        <p className="pace-note behind">
+          ⏰ Target {due} sudah lewat {-pace.daysLeft} hari. Sisa <b><Money value={pace.remaining} /></b>. Geser target
+          tanggalnya, atau terus setor; bangunannya tetap naik.
+        </p>
+      );
+    default:
+      return null;
+  }
+}
+
+/** Target tanggal bisa diatur/diubah di sini (tepira hanya mengisinya saat goal dibuat). */
+function DeadlineEditor({ goal }: { goal: GoalView }) {
+  const updateGoalDeadline = useVillage((s) => s.updateGoalDeadline);
+  const loading = useVillage((s) => s.loading);
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState(goal.deadline ? dateInputValue(goal.deadline) : "");
+  if (!editing) {
+    return (
+      <button
+        className="pill deadline-open"
+        onClick={() => {
+          setDate(goal.deadline ? dateInputValue(goal.deadline) : "");
+          setEditing(true);
+        }}
+      >
+        {goal.deadline ? "✏️ Ubah target tanggal" : "🗓️ Atur target tanggal"}
+      </button>
+    );
+  }
+  const save = async (value: string | null) => {
+    if (await updateGoalDeadline(goal.id, value)) setEditing(false);
+  };
+  return (
+    <form
+      className="add-form deadline-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (date) void save(date);
+      }}
+    >
+      <label>
+        Target tanggal
+        <input type="date" value={date} min={todayInputValue()} onChange={(e) => setDate(e.target.value)} autoFocus />
+      </label>
+      <div className="confirm-row">
+        <button className="pill on" type="submit" disabled={loading || !date}>💾 Simpan</button>
+        {goal.deadline && (
+          <button className="pill ghost" type="button" disabled={loading} onClick={() => void save(null)}>
+            Hapus target
+          </button>
+        )}
+        <button className="pill ghost" type="button" onClick={() => setEditing(false)}>Batal</button>
+      </div>
+    </form>
   );
 }
 
@@ -246,6 +367,7 @@ function SavePanel() {
     if (!goalId && active[0]) setGoalId(active[0].id);
   }, [goalId, active]);
   const goal = goals.find((g) => g.id === goalId);
+  const pace = goal ? goalPace(goal) : null;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -283,6 +405,14 @@ function SavePanel() {
         <div className="bar">
           <div style={{ width: `${Math.round(goal.progress * 100)}%`, background: "#f28cb4" }} />
         </div>
+      )}
+      {goal && pace && (pace.status === "ontrack" || pace.status === "ahead" || pace.status === "behind") && (
+        <p className="cat-hint">
+          🗓️ Supaya tepat {shortDate(goal.deadline!)}: <b><Money value={pace.perWeek} />/minggu</b>{" "}
+          <button type="button" className="pill" onClick={() => setAmount(pace.perWeek)}>
+            Isi
+          </button>
+        </p>
       )}
       <label>
         Nominal
@@ -354,65 +484,92 @@ function SpendPanel() {
       <>
         <p className="muted">Pengeluaran harus dipotong dari dompet. Buat dompet dulu, ya.</p>
         <button className="primary" onClick={() => setPanel("wallets")} data-tour="spend-need-wallet">👛 Buat dompet</button>
+        <NoSpendToday />
       </>
     );
   }
 
   return (
-    <form className="add-form" onSubmit={submit} data-tour="spend-form">
-      {sameMonth && summary && summary.budget.status !== "NO_BUDGET" && (
-        <p className={`intro ${summary.budget.status === "OVER_BUDGET" ? "warn" : ""}`}>
-          Sisa budget bulan ini: <b><Money value={summary.budget.remaining} /></b>
-        </p>
-      )}
-      <label>
-        Nominal
-        <AmountInput value={amount} onChange={setAmount} placeholder="25.000" autoFocus />
-      </label>
-      <label>
-        Kategori
-        <CategorySelect value={category} onChange={setCategory} />
-      </label>
-      {sameMonth && salary && source === "gaji" && (
-        <CategoryBudgetHint salary={salary} expenses={expenses ?? []} category={category} amount={amount} />
-      )}
-      {!sameMonth && hasBudget && /^\d{4}-\d{2}$/.test(dateMonth) && (
-        <p className="cat-hint">
-          Jatah {monthLabel(Number(dateMonth.slice(5, 7)), Number(dateMonth.slice(0, 4)))} tidak dimuat. Pindah ke bulan itu
-          untuk melihat sisa budget.
-        </p>
-      )}
-      <label>
-        Dompet
-        <select value={walletId} onChange={(e) => setWalletId(Number(e.target.value))}>
-          {wallets.map((w) => (
-            <option key={w.id} value={w.id}>
-              {walletEmoji(w.type)} {w.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="two-col">
+    <>
+      <form className="add-form" onSubmit={submit} data-tour="spend-form">
+        {sameMonth && summary && summary.budget.status !== "NO_BUDGET" && (
+          <p className={`intro ${summary.budget.status === "OVER_BUDGET" ? "warn" : ""}`}>
+            Sisa budget bulan ini: <b><Money value={summary.budget.remaining} /></b>
+          </p>
+        )}
         <label>
-          Sumber
-          <select value={source} onChange={(e) => setSource(e.target.value as "gaji" | "bonus")}>
-            <option value="gaji">Gaji</option>
-            <option value="bonus">Bonus</option>
+          Nominal
+          <AmountInput value={amount} onChange={setAmount} placeholder="25.000" autoFocus />
+        </label>
+        <label>
+          Kategori
+          <CategorySelect value={category} onChange={setCategory} />
+        </label>
+        {sameMonth && salary && source === "gaji" && (
+          <CategoryBudgetHint salary={salary} expenses={expenses ?? []} category={category} amount={amount} />
+        )}
+        {!sameMonth && hasBudget && /^\d{4}-\d{2}$/.test(dateMonth) && (
+          <p className="cat-hint">
+            Jatah {monthLabel(Number(dateMonth.slice(5, 7)), Number(dateMonth.slice(0, 4)))} tidak dimuat. Pindah ke bulan itu
+            untuk melihat sisa budget.
+          </p>
+        )}
+        <label>
+          Dompet
+          <select value={walletId} onChange={(e) => setWalletId(Number(e.target.value))}>
+            {wallets.map((w) => (
+              <option key={w.id} value={w.id}>
+                {walletEmoji(w.type)} {w.name}
+              </option>
+            ))}
           </select>
         </label>
+        <div className="two-col">
+          <label>
+            Sumber
+            <select value={source} onChange={(e) => setSource(e.target.value as "gaji" | "bonus")}>
+              <option value="gaji">Gaji</option>
+              <option value="bonus">Bonus</option>
+            </select>
+          </label>
+          <label>
+            Tanggal
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </label>
+        </div>
         <label>
-          Tanggal
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          Catatan (opsional)
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makan siang" />
         </label>
-      </div>
-      <label>
-        Catatan (opsional)
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makan siang" />
-      </label>
-      <button className="primary spend" type="submit" data-tour="spend-submit" disabled={loading || amount <= 0 || !walletId}>
-        💸 Catat {amount > 0 ? formatRupiah(amount) : ""}
-      </button>
-    </form>
+        <button className="primary spend" type="submit" data-tour="spend-submit" disabled={loading || amount <= 0 || !walletId}>
+          💸 Catat {amount > 0 ? formatRupiah(amount) : ""}
+        </button>
+      </form>
+      <NoSpendToday />
+    </>
+  );
+}
+
+/** Hari tanpa belanja tetap menyalakan lampu streak, asal ditandai. */
+function NoSpendToday() {
+  const streak = useStreak();
+  const toggleNoSpend = useVillage((s) => s.toggleNoSpend);
+  const today = streak.week[6];
+  if (today.recorded) return null;
+  return (
+    <div className={`nospend-box ${today.noSpend ? "on" : ""}`}>
+      {today.noSpend ? (
+        <>
+          🌙 Hari ini ditandai <b>nol pengeluaran</b>.
+          <button className="link-btn" onClick={() => toggleNoSpend(today.day)}>Batalkan</button>
+        </>
+      ) : (
+        <>
+          <span>Hari ini tidak belanja apa-apa?</span>
+          <button className="pill" onClick={() => toggleNoSpend(today.day)}>🌙 Tandai nol pengeluaran</button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -800,6 +957,171 @@ function MonthPanel() {
   );
 }
 
+// ── Perkembangan desa: streak, warga, bangunan level ─────────────────────────
+
+const weekday = (day: number) => wibDayDate(day).toLocaleDateString("id-ID", { weekday: "short", timeZone: "UTC" });
+
+function VillagePanel() {
+  const streak = useStreak();
+  const { xp, level } = useVillageXp();
+  const toggleNoSpend = useVillage((s) => s.toggleNoSpend);
+  const setPanel = useVillage((s) => s.setPanel);
+  const moneyVisible = useMoneyVisible();
+  return (
+    <>
+      <div className="streak-card">
+        <div className="streak-big">
+          <span>{streak.current > 0 ? "🔥" : "🕯️"}</span>
+          <b>{streak.current}</b>
+          <span>hari beruntun</span>
+        </div>
+        <small className="muted">Terpanjang {streak.longest} hari</small>
+      </div>
+      <p className={`intro ${streak.todayDone ? "" : "warn"}`}>
+        {streak.todayDone
+          ? "Hari ini sudah tercatat ✓ Lampu di depan Balai Desa menyala."
+          : "Hari ini belum tercatat. Catat pengeluaran atau setoran, atau tandai nol pengeluaran kalau memang tidak belanja."}
+      </p>
+      <div className="week-strip">
+        {streak.week.map((d, i) => {
+          const lit = d.recorded || d.noSpend;
+          return (
+            <div key={d.day} className={`week-day ${lit ? "lit" : ""} ${i === 6 ? "today" : ""}`}>
+              <i className="week-lamp" />
+              <small>{i === 6 ? "Hari ini" : weekday(d.day)}</small>
+              <b>{wibDayDate(d.day).getUTCDate()}</b>
+              {d.recorded ? (
+                <em>tercatat</em>
+              ) : d.noSpend || d.day >= streak.today - NOSPEND_BACKFILL_DAYS ? (
+                <button
+                  className={`week-nospend ${d.noSpend ? "on" : ""}`}
+                  onClick={() => toggleNoSpend(d.day)}
+                  title={d.noSpend ? "Batalkan tanda nol pengeluaran" : "Tandai: tidak ada pengeluaran hari itu"}
+                >
+                  {d.noSpend ? "nol ✓" : "nol?"}
+                </button>
+              ) : (
+                <em className="missed">–</em>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="muted small">
+        Hari tercatat = ada pengeluaran atau setoran bertanggal hari itu (WIB). Lupa kemarin? Catat dengan tanggal kemarin,
+        lampunya tetap menyala. Tanda &quot;nol&quot; bisa untuk hari ini dan {NOSPEND_BACKFILL_DAYS} hari sebelumnya, tersimpan di
+        perangkat ini.
+      </p>
+      <div className="chips">
+        <button className="pill" onClick={() => setPanel("spend")}>💸 Catat pengeluaran</button>
+        <button className="pill" onClick={() => setPanel("save")}>🪙 Nabung</button>
+      </div>
+
+      <section>
+        <h3>
+          🧑‍🌾 Warga <span className="count">{streak.villagers}/{MAX_VILLAGERS}</span>
+        </h3>
+        <p className="muted small">Tiap 7 hari beruntun, satu warga pindah ke desa dan menetap walaupun streak-nya putus.</p>
+        <div className="chips">
+          {VILLAGER_NAMES.map((name, i) => (
+            <span key={name} className={`pill folk ${i < streak.villagers ? "on" : "off"}`}>
+              {i < streak.villagers ? `🧑‍🌾 ${name}` : "🏚️ ?"}
+            </span>
+          ))}
+        </div>
+        {streak.nextVillagerIn > 0 && (
+          <p className="intro">
+            {VILLAGER_NAMES[streak.villagers]} datang kalau streak bertambah <b>{streak.nextVillagerIn} hari</b> lagi.
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h3>
+          🏗️ Bangunan level <span className="count">Lv{level}</span>
+        </h3>
+        <div className="unlock-list">
+          {VILLAGE_UNLOCKS.map((u) => {
+            const open = level >= u.level;
+            return (
+              <div key={u.key} className={`unlock-row ${open ? "open" : ""}`}>
+                <span className="unlock-emoji">{u.emoji}</span>
+                <div className="unlock-main">
+                  <b>{u.name}</b> <span className="lv">Lv{u.level}</span>
+                  <small className="muted block">
+                    {open
+                      ? u.desc
+                      : // XP bisa dihitung balik jadi total tabungan, jadi ikut disembunyikan.
+                        moneyVisible
+                        ? `Butuh ${(xpForLevel(u.level) - xp).toLocaleString("id-ID")} XP lagi`
+                        : "Terkunci"}
+                  </small>
+                </div>
+                <span className="unlock-state">{open ? "✓" : "🔒"}</span>
+              </div>
+            );
+          })}
+        </div>
+        <p className="muted small">XP dari menabung: tiap Rp10.000 = 1 XP, tiap setoran +5 XP.</p>
+      </section>
+    </>
+  );
+}
+
+// ── Surat mingguan ───────────────────────────────────────────────────────────
+
+const wibShortDate = (time: number) =>
+  new Date(time).toLocaleDateString("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Jakarta" });
+
+function LetterPanel() {
+  const snapshot = useVillage((s) => s.snapshot);
+  const markLetterRead = useVillage((s) => s.markLetterRead);
+  const { key, unread, insight } = useLetter();
+  useEffect(() => {
+    if (unread) markLetterRead(key);
+  }, [unread, key, markLetterRead]);
+  if (!snapshot) return null;
+
+  const { summary } = snapshot;
+  const letter = insight ?? previewInsight(summary, snapshot.totals.debts);
+  const score = insight?.healthScore ?? summary.health.score;
+  const status = insight?.status ?? summary.health.status;
+  const tone = score >= 85 ? "great" : score >= 70 ? "good" : score >= 55 ? "ok" : "bad";
+  const name = snapshot.user.name?.split(" ")[0] || "kamu";
+  // weekEnd = Senin berikutnya 00:00 WIB (eksklusif), jadi tampilkan Minggu-nya.
+  const when = insight
+    ? `Minggu ${wibShortDate(Date.parse(insight.weekStart))} – ${wibShortDate(Date.parse(insight.weekEnd) - 1)}`
+    : `Pratinjau ${monthLabel(summary.month, summary.year)}`;
+  return (
+    <>
+      <article className="letter">
+        <header className="letter-head">
+          <span className="letter-stamp">💌</span>
+          <div>
+            <b>Untuk {name}</b>
+            <small className="muted block">{when}</small>
+          </div>
+          <span className={`letter-score ${tone}`} title={status}>
+            {score}
+          </span>
+        </header>
+        <p className="letter-body">{letter.summary}</p>
+        <ul className="letter-recs">
+          {letter.recommendations.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+        <p className="letter-sign">— Cyrene &lt;3</p>
+      </article>
+      <p className="muted small">
+        {insight
+          ? "Surat dibuat otomatis tiap Senin 08:00 WIB oleh tepira, sama dengan Insight dari Cyrene di halaman Laporan."
+          : "Belum ada insight mingguan tersimpan untuk akun ini, jadi ini pratinjau dari angka bulan yang sedang dilihat (sama seperti halaman Laporan tepira)."}
+      </p>
+    </>
+  );
+}
+
 // ── Root ─────────────────────────────────────────────────────────────────────
 
 const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], null>, string> = {
@@ -809,7 +1131,9 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   wallets: "👛 Dompet",
   salary: "💰 Alokasi gaji",
   log: "📜 Riwayat",
-  month: "📊 Bulan ini"
+  month: "📊 Bulan ini",
+  village: "🏝️ Perkembangan desa",
+  letter: "💌 Surat dari Cyrene"
 };
 
 export default function Panels() {
@@ -825,6 +1149,8 @@ export default function Panels() {
       {panel === "salary" && <SalaryPanel />}
       {panel === "log" && <LogPanel />}
       {panel === "month" && <MonthPanel />}
+      {panel === "village" && <VillagePanel />}
+      {panel === "letter" && <LetterPanel />}
     </PanelShell>
   );
 }

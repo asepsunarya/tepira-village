@@ -32,12 +32,15 @@ async function main() {
     prisma.wallet.create({ data: { userId: user.id, name: "Kartu kredit", type: "credit", balance: 1_250_000, isDebt: true, sortOrder: 3 } })
   ]);
 
+  // Dana darurat sengaja telat dari jadwal (rumput liar), Laptop lebih cepat (ada tukang).
   await prisma.goal.create({
     data: {
       userId: user.id,
       title: "Dana darurat",
       description: "3 bulan pengeluaran",
       targetAmount: 15_000_000,
+      createdAt: ago(150),
+      deadline: ago(-60),
       contributions: {
         create: [
           { amount: 2_000_000, note: "Sisa gaji", date: ago(70) },
@@ -53,6 +56,7 @@ async function main() {
       userId: user.id,
       title: "Laptop baru",
       targetAmount: 12_000_000,
+      createdAt: ago(60),
       deadline: new Date(year + 1, 2, 1),
       contributions: { create: [{ amount: 9_600_000, note: "Tabungan lama", date: ago(20) }] }
     }
@@ -113,6 +117,47 @@ async function main() {
       data: { userId: user.id, amount: e.amount, category: e.category, note: e.note, source: "gaji", date: d, walletId: e.walletId }
     });
   }
+
+  // Kebiasaan mencatat: jajan kecil hampir tiap hari supaya lampu streak & warga terlihat.
+  // Hari ke-10 s.d. 16 lalu sengaja bolong, jadi ada dua deret (± 10 dan 14 hari → 3 warga).
+  const habitDays = [6, 7, 8, 9, ...Array.from({ length: 14 }, (_, i) => 17 + i)];
+  for (const days of habitDays) {
+    await prisma.expense.create({
+      data: {
+        userId: user.id,
+        amount: 12_000 + (days % 4) * 3_000,
+        category: "Nongkrong / jajan",
+        note: "Jajan sore",
+        source: "gaji",
+        date: ago(days),
+        walletId: cash.id
+      }
+    });
+  }
+
+  // Surat mingguan minggu ini, bentuknya sama dengan cron /api/reports/weekly-insights di tepira.
+  const wib = new Date(now.getTime() + 7 * 3_600_000);
+  const mondayWib = Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate() - (wib.getUTCDay() || 7) + 1);
+  const weekStart = new Date(mondayWib - 7 * 3_600_000);
+  await prisma.weeklyFinancialInsight.create({
+    data: {
+      userId: user.id,
+      weekStart,
+      weekEnd: new Date(weekStart.getTime() + 7 * 86_400_000),
+      month: new Date(mondayWib).getUTCMonth() + 1,
+      year: new Date(mondayWib).getUTCFullYear(),
+      healthScore: 78,
+      status: "SEHAT",
+      summary:
+        "Cyrene melihat skor minggu ini 78/100 (SEHAT). Rasio tabungan 27.8%, disiplin budget 100%, runway sekitar 3.2 bulan, dan rasio kewajiban 13.9% dari pemasukan.",
+      recommendations: [
+        "Tabungan sudah cantik; pertahankan minimal 20% supaya masa depanmu makin aman.",
+        "Budget masih disiplin. Jangan kasih celah ke pengeluaran impulsif kecil-kecil ya.",
+        "Runway sudah nyaman. Berikutnya boleh fokus memperbesar goal penting.",
+        "Kurangi kewajiban aktif dulu sebelum menambah goal baru yang agresif."
+      ]
+    }
+  });
 
   console.log("Seed selesai untuk", email);
 }
