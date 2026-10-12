@@ -13,7 +13,7 @@ import {
 } from "@/lib/game";
 import type { ActionResult, Snapshot } from "@/lib/game";
 import * as actions from "@/app/village/actions";
-import type { Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
+import type { MapThemeSetting, Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
 import { HALL, LAMP_POSTS, UNLOCK_SPOTS, WARUNG, goalPlot } from "./layout";
 import { formatCompact } from "@/lib/format";
 import { readLetter, readNoSpend, readSeen, writeLetter, writeNoSpend, writeSeen } from "./daily";
@@ -35,6 +35,8 @@ export interface UiSettings {
   showLabels: boolean;
   hideMoney: boolean;
   freeze: boolean;
+  /** suasana peta jajan; kosong (simpanan lama) = "desa" */
+  mapTheme?: MapThemeSetting;
 }
 
 /** Tur desa (coach mark) untuk pengguna baru. Progres per user di localStorage, bukan di DB. */
@@ -74,7 +76,8 @@ interface State {
   openGoal: (goalId: number | null) => void;
   openWallet: (walletId: number | null) => void;
   setTime: (time: TimeOfDay) => void;
-  toggleUi: (key: Exclude<keyof UiSettings, "time">) => void;
+  toggleUi: (key: "showLabels" | "hideMoney" | "freeze") => void;
+  setMapTheme: (theme: MapThemeSetting) => void;
   unlock: (pin: string) => Promise<boolean>;
   lock: () => void;
   resetView: () => void;
@@ -240,6 +243,7 @@ export const useVillage = create<State>()(
         openWallet: (walletId) => set({ selectedWalletId: walletId, panel: walletId ? "wallets" : get().panel }),
         setTime: (time) => set((s) => ({ ui: { ...s.ui, time } })),
         toggleUi: (key) => set((s) => ({ ui: { ...s.ui, [key]: !s.ui[key] } })),
+        setMapTheme: (mapTheme) => set((s) => ({ ui: { ...s.ui, mapTheme } })),
         unlock: async (pin) => {
           const res = await actions.verifyPin(pin);
           if (res.success) {

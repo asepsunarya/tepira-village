@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import dynamic from "next/dynamic";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ContributionView, ExpenseView, GoalPace, GoalView, KnownPlace, WalletView } from "@/lib/game";
 import {
   MAX_VILLAGERS,
@@ -29,20 +28,13 @@ import {
   todayInputValue
 } from "@/lib/format";
 import { parseQuickEntry, type QuickEntry } from "@/lib/quick-entry";
-import { categoryColor, spendingByPlace } from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
 import { useLetter, useStreak, useVillageXp } from "../useProgress";
 import { Money } from "./Money";
 import { AmountInput, CATEGORY_GROUPS } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
-import type { MapFocus } from "./JajanMap";
-
-// MapLibre (±250 kB) hanya dimuat saat panel peta dibuka.
-const JajanMap = dynamic(() => import("./JajanMap"), {
-  ssr: false,
-  loading: () => <div className="jajan-map loading">Memuat peta…</div>
-});
+import JajanView from "./JajanView";
 
 const NO_PLACES: KnownPlace[] = [];
 
@@ -68,16 +60,14 @@ function CategorySelect({ value, onChange }: { value: string; onChange: (v: stri
 function PanelShell({
   title,
   children,
-  onClose,
-  wide = false
+  onClose
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
-  wide?: boolean;
 }) {
   return (
-    <aside className={`panel card ${wide ? "wide" : ""}`} data-tour="panel">
+    <aside className="panel card" data-tour="panel">
       <header>
         <h2>{title}</h2>
         <button className="icon-btn" onClick={onClose} title="Tutup">✕</button>
@@ -1146,92 +1136,6 @@ function MonthPanel() {
   );
 }
 
-// ── Peta jajan ───────────────────────────────────────────────────────────────
-
-/** "Langganan (Spotify, Netflix, dll)" → "Langganan" */
-const shortCategory = (label: string) => label.replace(/\s*\(.*\)$/, "");
-
-function JajanPanel() {
-  const snapshot = useVillage((s) => s.snapshot);
-  const expenses = snapshot?.expenses;
-  const setPanel = useVillage((s) => s.setPanel);
-  const moneyVisible = useMoneyVisible();
-  const [focus, setFocus] = useState<MapFocus | null>(null);
-  const located = useMemo(() => (expenses ?? []).filter((e) => e.latitude !== null && e.longitude !== null), [expenses]);
-  const spots = useMemo(() => spendingByPlace(located), [located]);
-  if (!snapshot) return null;
-
-  const { summary, places } = snapshot;
-  const locatedTotal = located.reduce((s, e) => s + e.amount, 0);
-  const share = summary.expenses.total > 0 ? Math.round((locatedTotal / summary.expenses.total) * 100) : 0;
-  const categories = [...new Set(spots.map((s) => s.topCategory).filter((c): c is string => Boolean(c)))];
-  const home = places[0] ? { lat: places[0].lat, lng: places[0].lng } : null;
-
-  return (
-    <>
-      <p className="intro">
-        {monthLabel(summary.month, summary.year)} · <b>{located.length}</b> dari {snapshot.expenses.length} pengeluaran punya
-        lokasi{moneyVisible && located.length > 0 ? ` (${share}% nominal)` : ""}.
-      </p>
-      <JajanMap spots={spots} focus={focus} hideMoney={!moneyVisible} home={home} />
-      {categories.length > 0 && (
-        <div className="jajan-legend">
-          {categories.map((c) => (
-            <span key={c}>
-              <i style={{ background: categoryColor(c) }} />
-              {shortCategory(c)}
-            </span>
-          ))}
-        </div>
-      )}
-      {spots.length === 0 ? (
-        <div className="jajan-empty">
-          <b>Belum ada pengeluaran berlokasi di bulan ini.</b>
-          <span>
-            Saat mencatat, tekan <b>📍</b> di isian Tempat, atau tulis <i>@nama tempat</i> di catat cepat, misalnya{" "}
-            <i>kopi 20rb @toko djawa</i>. Catatan lama bisa diberi tempat lewat ✏️ di Riwayat.
-          </span>
-          <div className="chips">
-            <button className="pill" onClick={() => setPanel("spend")}>💸 Catat pengeluaran</button>
-            <button className="pill" onClick={() => setPanel("log")}>📜 Riwayat</button>
-          </div>
-        </div>
-      ) : (
-        <section>
-          <h3>📍 Tempat teratas</h3>
-          <div className="spot-list">
-            {spots.slice(0, 8).map((s, i) => (
-              <button
-                key={s.key}
-                className="spot-row"
-                onClick={() => setFocus((f) => ({ key: s.key, n: (f?.n ?? 0) + 1 }))}
-                title="Lihat di peta"
-              >
-                <span className="spot-rank">{i + 1}</span>
-                <i className="spot-dot" style={{ background: categoryColor(s.topCategory) }} />
-                <span className="spot-main">
-                  <b>{s.name ?? "Titik tanpa nama"}</b>
-                  <small className="muted block">
-                    {s.count}× · {s.topCategory ? shortCategory(s.topCategory) : "Lainnya"}
-                  </small>
-                </span>
-                <span className="spot-total">
-                  <Money value={s.total} />
-                  {moneyVisible && locatedTotal > 0 && <small className="muted block">{Math.round((s.total / locatedTotal) * 100)}%</small>}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-      <p className="muted small">
-        Titik di peta = tempat, warna = kategori terbanyak, besar = nominal. Peta dasar: OpenFreeMap · © OpenStreetMap
-        contributors.
-      </p>
-    </>
-  );
-}
-
 // ── Perkembangan desa: streak, warga, bangunan level ─────────────────────────
 
 const weekday = (day: number) => wibDayDate(day).toLocaleDateString("id-ID", { weekday: "short", timeZone: "UTC" });
@@ -1416,8 +1320,10 @@ export default function Panels() {
   const panel = useVillage((s) => s.panel);
   const setPanel = useVillage((s) => s.setPanel);
   if (!panel) return null;
+  // Peta jajan tampil layar penuh, bukan panel samping.
+  if (panel === "jajan") return <JajanView onClose={() => setPanel(null)} />;
   return (
-    <PanelShell title={TITLES[panel]} onClose={() => setPanel(null)} wide={panel === "jajan"}>
+    <PanelShell title={TITLES[panel]} onClose={() => setPanel(null)}>
       {panel === "goals" && <GoalsPanel />}
       {panel === "save" && <SavePanel />}
       {panel === "spend" && <SpendPanel />}
@@ -1427,7 +1333,6 @@ export default function Panels() {
       {panel === "month" && <MonthPanel />}
       {panel === "village" && <VillagePanel />}
       {panel === "letter" && <LetterPanel />}
-      {panel === "jajan" && <JajanPanel />}
     </PanelShell>
   );
 }

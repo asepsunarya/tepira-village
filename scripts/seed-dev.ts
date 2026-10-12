@@ -109,7 +109,12 @@ async function main() {
     ampera: { placeName: "Warung Nasi Ampera Dago", latitude: -6.88512, longitude: 107.61387 },
     indomaret: { placeName: "Indomaret Dago", latitude: -6.88579, longitude: 107.61362 },
     spbu: { placeName: "SPBU Pertamina Dago", latitude: -6.87945, longitude: 107.61713 },
-    apotek: { placeName: "Apotek Kimia Farma Dago", latitude: -6.88731, longitude: 107.61329 }
+    apotek: { placeName: "Apotek Kimia Farma Dago", latitude: -6.88731, longitude: 107.61329 },
+    seblak: { placeName: "Seblak Teh Imas", latitude: -6.8902, longitude: 107.6152 },
+    gacoan: { placeName: "Mie Gacoan Dago", latitude: -6.8879, longitude: 107.6146 },
+    pasar: { placeName: "Pasar Simpang Dago", latitude: -6.8848, longitude: 107.6135 },
+    gramedia: { placeName: "Gramedia Merdeka", latitude: -6.9128, longitude: 107.6105 },
+    warkop: { placeName: "Warkop Bang Ijo", latitude: -6.896, longitude: 107.6125 }
   };
   const expenses = [
     { amount: 35_000, category: "Makan harian", note: "Makan siang", walletId: gopay.id, days: 0, place: PLACES.bakso },
@@ -121,11 +126,24 @@ async function main() {
     { amount: 30_000, category: "Transport", note: "Bensin", walletId: gopay.id, days: 2, place: PLACES.spbu },
     { amount: 26_500, category: "Belanja kecil", note: "Sabun & sampo", walletId: gopay.id, days: 3, place: PLACES.indomaret },
     { amount: 45_000, category: "Kesehatan / Obat", note: "Obat flu", walletId: cash.id, days: 5, place: PLACES.apotek },
-    { amount: 25_000, category: "Makan harian", note: "Bakso", walletId: cash.id, days: 6, place: PLACES.bakso }
+    { amount: 25_000, category: "Makan harian", note: "Bakso", walletId: cash.id, days: 6, place: PLACES.bakso },
+    // Peta jajan ala "Peta Oyen": langganan (warkop, gacoan), tempat baru, dan yang berdekatan.
+    { amount: 18_000, category: "Makan harian", note: "Seblak", walletId: cash.id, days: 1, place: PLACES.seblak },
+    { amount: 32_000, category: "Makan harian", note: "Mie", walletId: gopay.id, days: 2, place: PLACES.gacoan },
+    { amount: 28_000, category: "Makan harian", note: "Mie", walletId: gopay.id, days: 8, place: PLACES.gacoan },
+    { amount: 64_000, category: "Belanja kecil", note: "Sayur & buah", walletId: cash.id, days: 7, place: PLACES.pasar },
+    { amount: 89_000, category: "Belanja kecil", note: "Buku tulis", walletId: bca.id, days: 9, place: PLACES.gramedia },
+    { amount: 15_000, category: "Nongkrong / jajan", note: "Kopi susu", walletId: cash.id, days: 3, place: PLACES.warkop },
+    { amount: 12_000, category: "Nongkrong / jajan", note: "Es teh", walletId: cash.id, days: 7, place: PLACES.warkop },
+    { amount: 14_000, category: "Nongkrong / jajan", note: "Kopi", walletId: cash.id, days: 10, place: PLACES.warkop },
+    { amount: 19_000, category: "Transport", note: "Ojek", walletId: gopay.id, days: 4 },
+    { amount: 24_000, category: "Transport", note: "Taksi online", walletId: gopay.id, days: 6 },
+    // Bulan lalu: bakso sudah pernah didatangi, jadi bukan "pertama kali" di bulan ini.
+    { amount: 25_000, category: "Makan harian", note: "Bakso", walletId: cash.id, days: 24, place: PLACES.bakso, anyMonth: true }
   ];
   for (const e of expenses) {
     const d = ago(e.days);
-    if (d.getMonth() + 1 !== month) continue;
+    if (d.getMonth() + 1 !== month && !("anyMonth" in e)) continue;
     await prisma.expense.create({
       data: {
         userId: user.id,
