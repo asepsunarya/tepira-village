@@ -70,12 +70,14 @@ musim ala Indonesia (`lib/season.ts`, tampilannya di `components/village/seasons
 - Musim hanya mengubah warna & skala saat render (rumput, mahkota pohon, kolam) plus efek kecil. Tata letak dekorasi,
   langit/laut/cahaya (milik cuaca skor), dan warna tanda bahaya (rumput liar, kios layu) tidak berubah. Landing tidak ikut.
 - Efek bergerak (hujan, kunang-kunang, daun, kupu-kupu) tidak tampil kalau sistem meminta *kurangi gerakan*; layangan dan
-  bendera diam. Semua efek musim bisa dimatikan di jurnal (`ui.reduceFx`, tersimpan di browser); warna musim tetap.
+  bendera diam. Hujan, pelangi, kunang-kunang, layangan, kupu-kupu, dan daun gugur bisa dimatikan di jurnal (`ui.reduceFx`,
+  tersimpan di browser); warna pulau (termasuk mangga & pohon meranggas), genangan, pojok musim, dan bendera tetap tampil.
 
 **📔 Jurnal tahun ini** (panel samping) memakai **hari ini (WIB)**: cincin "Hari ke-286 dari 365", musim sekarang dan
 pergantian berikutnya ("Musim hujan mulai 1 Nov, 19 hari lagi"), pita 12 bulan (klik = pindah ke bulan itu), kalender
-kebiasaan 12×31 dari hari tercatat + tanda nol pengeluaran (hari sebelum mulai mencatat tidak dihitung terlewat), dan
-angka tahun ini: hari tercatat, deret terpanjang & sekarang, goal dibuat, warga, level. Dibuka dari label bulan di kontrol
+kebiasaan 12×31 dari hari tercatat + tanda nol pengeluaran (hari sebelum catatan pertama dalam 400 hari terakhir = "belum ada
+data", tidak dihitung terlewat), dan
+angka tahun ini: hari tercatat, deret terpanjang & sekarang (sejak 1 Januari), goal dibuat, warga, level. Dibuka dari label bulan di kontrol
 atas (emoji musim di atasnya), chip di 🏝️ Perkembangan desa, atau pojok musim di samping Balai Desa. Tanpa query baru:
 datanya `activityDays` (400 hari) yang sudah dikirim untuk lampu streak.
 
@@ -167,8 +169,9 @@ Kanvas **🌊 Aliran uang** layar penuh menggambar uang bulan yang dilihat sebag
 - **Mata air:** Gaji dan Bonus. Kalau yang keluar lebih besar dari pemasukan, selisihnya mengalir dari mata air
   **🏺 Dari saldo dompet** (juga saat gaji bulan itu belum dicatat). Saldo awal bukan pemasukan, sama dengan Laporan tepira.
 - **Waduk** di tengah, lalu bercabang ke:
-  - tiap **kategori** pengeluaran (terbesar dulu). Label "Rp… / Rp…" = realisasi / jatah alokasi gaji; **🌊 meluap** kalau
-    bagian yang bersumber gaji melewati jatah (sama dengan panel 💰 Gaji). Key kategori lama dari tepira ikut diterjemahkan.
+  - tiap **kategori** pengeluaran (terbesar dulu). Label "Rp… / Rp…" = realisasi bersumber gaji / jatah alokasi gaji (sama
+    dengan panel 💰 Gaji, "+🎁" kalau ada yang dibayar dari bonus); **🌊 meluap** kalau realisasi gaji melewati jatah. Tebal
+    pitanya tetap semua sumber. Key kategori lama dari tepira ikut diterjemahkan.
   - tiap **goal** yang disetori bulan itu (warna pita = warna atap bangunannya; lebih dari 5 goal digabung).
   - **🐷 Disisihkan**: alokasi tabungan gaji yang belum disetor ke goal. Setoran ke goal dianggap diambil dari alokasi
     tabungan dulu, jadi tabungan tidak dihitung dobel.

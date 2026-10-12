@@ -58,3 +58,40 @@ test("yang bukan bilangan tidak disentuh", () => {
   assert.equal(N("sate dua puluh ribu"), "sate Rp20.000");
   assert.equal(N("Bakso Lima Belas Ribu, gopay."), "Bakso Rp15.000, gopay.");
 });
+
+test("satuan sesudah nominal yang diikuti kata hitungan bukan bagian nominal", () => {
+  assert.equal(N("bensin lima puluh ribu dua hari yang lalu"), "bensin Rp50.000 2 hari yang lalu");
+  assert.equal(N("ojek delapan belas ribu dua hari lalu"), "ojek Rp18.000 2 hari lalu");
+  assert.equal(N("kopi dua puluh ribu dua gelas"), "kopi Rp20.000 2 gelas");
+  assert.equal(N("pulsa sepuluh ribu dua kali"), "pulsa Rp10.000 2 kali");
+  assert.equal(N("bensin 50.000 dua hari yang lalu"), "bensin 50.000 2 hari yang lalu");
+  // bentuk lisan tetap jalan kalau tidak diikuti kata hitungan
+  assert.equal(N("tiga ribu lima pakai gopay"), "Rp3.500 pakai gopay");
+  assert.equal(N("parkir tiga ribu lima"), "parkir Rp3.500");
+});
+
+test("ratus tanpa harga lain = nominal; bersama harga yang jelas = jumlah", () => {
+  assert.equal(N("daging sapi lima ratus gram delapan puluh ribu"), "daging sapi 500 gram Rp80.000");
+  assert.equal(N("cabe dua ratus gram sepuluh ribu"), "cabe 200 gram Rp10.000");
+  assert.equal(N("kertas seratus lembar dua puluh ribu"), "kertas 100 lembar Rp20.000");
+  assert.equal(N("parkir lima ratus"), "parkir Rp500");
+  assert.equal(N("rp lima ratus"), "Rp500");
+});
+
+test("setengah sesudah skala dan ratusan sesudah juta", () => {
+  assert.equal(N("kos sejuta setengah"), "kos Rp1.500.000");
+  assert.equal(N("dua ribu setengah"), "Rp2.500");
+  assert.equal(N("nasi sepuluh ribu setengah porsi"), "nasi Rp10.000 setengah porsi");
+  assert.equal(N("satu juta dua ratus"), "Rp1.200.000");
+  assert.equal(N("dua juta tiga ratus"), "Rp2.300.000");
+  assert.equal(N("sejuta dua ratus lima puluh"), "Rp1.250.000");
+  assert.equal(N("2 juta 500"), "Rp2.500.000");
+  assert.equal(N("dua juta lima ratus ribu"), "Rp2.500.000");
+});
+
+test("kunci prototipe bukan bilangan", () => {
+  assert.equal(N("constructor"), "constructor");
+  assert.equal(N("lima ribu constructor"), "Rp5.000 constructor");
+  assert.equal(N("__proto__ seratus"), "__proto__ Rp100");
+  assert.equal(N("toString valueOf hasOwnProperty"), "toString valueOf hasOwnProperty");
+});

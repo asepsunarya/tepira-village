@@ -43,7 +43,7 @@ import AliranView from "./AliranView";
 import JournalPanel from "./JournalPanel";
 import { PlaceLimitHint } from "./PlaceLimit";
 import { useLimitViews } from "../usePlaces";
-import { useSpeechSupported } from "../speech";
+import { useVoiceInput } from "../speech";
 import VoiceButton from "./VoiceButton";
 
 const NO_PLACES: KnownPlace[] = [];
@@ -575,16 +575,27 @@ function SpendPanel() {
   const quickInput = useRef<HTMLInputElement>(null);
   /** teks yang sudah diketik sebelum menekan 🎤; ucapan ditambahkan di belakangnya */
   const voicePrefix = useRef("");
-  const speechOk = useSpeechSupported();
-  const hearQuick = (spoken: string, final: boolean) => {
-    typeQuick([voicePrefix.current, normalizeSpokenAmounts(spoken)].filter(Boolean).join(" "));
-    // Desktop: fokus balik ke kolom supaya Enter langsung menyimpan. Di HP jangan (keyboard muncul).
-    if (final && window.matchMedia("(pointer: fine)").matches) quickInput.current?.focus();
-  };
+  const voice = useVoiceInput({
+    onText: (spoken, final) => {
+      typeQuick([voicePrefix.current, normalizeSpokenAmounts(spoken)].filter(Boolean).join(" "));
+      // Desktop: fokus balik ke kolom supaya Enter langsung menyimpan. Di HP jangan (keyboard muncul).
+      if (final && window.matchMedia("(pointer: fine)").matches) quickInput.current?.focus();
+    },
+    onError: setQuickHint,
+    // Esc: kembali ke isian sebelum bicara (yang setengah terdengar tidak boleh tertinggal di form).
+    onCancel: () => typeQuick(voicePrefix.current)
+  });
+  const cancelVoice = voice.cancel;
+  // Angka disembunyikan: kolomnya hilang, jadi ucapan tidak boleh terus mengisi nominal.
+  useEffect(() => {
+    if (!moneyVisible) cancelVoice();
+  }, [moneyVisible, cancelVoice]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (amount <= 0 || !walletId) return;
+    // Hasil suara yang datang sesudah ini jangan mengisi ulang form dengan catatan yang baru disimpan.
+    voice.cancel();
     const fromQuick = Boolean(quick.trim());
     const ok = await spend({ amount, category, note, source, date, walletId, place: placeInput(place) });
     if (ok) {
@@ -641,13 +652,12 @@ function SpendPanel() {
                 aria-describedby="quick-preview"
               />
               <VoiceButton
+                voice={voice}
                 disabled={loading}
                 onStart={() => {
                   voicePrefix.current = quick.trim();
                   setQuickHint(null);
                 }}
-                onText={hearQuick}
-                onError={setQuickHint}
               />
             </div>
             {parsed && (
@@ -667,7 +677,7 @@ function SpendPanel() {
             {!quick && (
               <small className="muted">
                 Ketik seperti chat lalu Enter
-                {speechOk ? <>, atau tekan 🎤 lalu ucapkan misalnya &ldquo;bakso lima belas ribu pakai gopay&rdquo;</> : null}. Isian di
+                {voice.supported ? <>, atau tekan 🎤 lalu ucapkan misalnya &ldquo;bakso lima belas ribu pakai gopay&rdquo;</> : null}. Isian di
                 bawah ikut terisi dan masih bisa diubah.
               </small>
             )}

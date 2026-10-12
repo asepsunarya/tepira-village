@@ -257,7 +257,8 @@ export function layoutFlow(flow: MoneyFlow, width: number): FlowLayout {
   const inner = height - PAD * 2;
 
   // Kolom: label sumber di kiri, waduk di tengah, tujuan + labelnya di kanan.
-  const sourceX = Math.min(130, Math.max(66, w * 0.2));
+  // Label sumber terpanjang ("🏺 Dari saldo…", ±90 px) rata kanan di sourceX − 8: jangan sampai terpotong.
+  const sourceX = Math.min(130, Math.max(96, w * 0.2));
   const outX = Math.min(w - LABEL_W, Math.max(sourceX + 100, w * 0.6));
   const poolW = Math.min(46, Math.max(24, w * 0.05));
   const poolX = sourceX + NODE_W + (outX - sourceX - NODE_W - poolW) * 0.45;

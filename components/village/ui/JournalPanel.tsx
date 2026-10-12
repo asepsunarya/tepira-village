@@ -9,6 +9,7 @@ import {
   habitYear,
   nextSeasonChange,
   seasonForMonth,
+  wibDayOf,
   wibDateParts,
   yearProgress,
   type HabitState
@@ -25,7 +26,7 @@ const HABIT_WORD: Record<HabitState, string> = {
   nospend: "nol pengeluaran",
   missed: "terlewat",
   future: "belum",
-  before: "sebelum mulai mencatat"
+  before: "belum ada data"
 };
 const LEGEND: HabitState[] = ["recorded", "nospend", "missed", "before", "future"];
 
@@ -62,6 +63,9 @@ export default function JournalPanel() {
     [goals, year]
   );
   if (!period) return null;
+  // Deret sekarang dihitung sejak 1 Januari saja, sama seperti deret terpanjang di sebelahnya.
+  const daysThisYear = today - wibDayOf(year, 1) + (streak.todayDone ? 1 : 0);
+  const currentThisYear = Math.min(streak.current, daysThisYear);
 
   const now = wibDateParts(today);
   const nowSeason = seasonForMonth(now.month);
@@ -205,7 +209,7 @@ export default function JournalPanel() {
           </div>
           <div>
             <small>Deret sekarang</small>
-            <b>{streak.current} hari</b>
+            <b>{currentThisYear} hari</b>
           </div>
           <div>
             <small>Goal dibuat</small>

@@ -45,7 +45,9 @@ function useWidth<T extends HTMLElement>() {
 function itemSub(item: FlowItem, flow: MoneyFlow, moneyVisible: boolean) {
   if (!moneyVisible) return overflowing(item) ? "meluap dari jatah" : "";
   if (overflowing(item)) return `${formatCompact(item.amount)} · meluap`;
-  if (item.budget !== null) return `${formatCompact(item.amount)} / ${formatCompact(item.budget)}`;
+  // Realisasi bersumber gaji / jatah, sama dengan panel 💰 Gaji; 🎁 = ada juga yang dibayar dari bonus.
+  if (item.budget !== null)
+    return `${formatCompact(item.fromSalary)} / ${formatCompact(item.budget)}${item.amount > item.fromSalary ? " +🎁" : ""}`;
   return `${formatCompact(item.amount)} · ${pct(item.amount, flow.total)}%`;
 }
 

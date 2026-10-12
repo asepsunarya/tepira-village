@@ -61,7 +61,11 @@ export interface VoiceHandlers {
   /** teks yang terdengar sejauh ini (interim, berulang), terakhir dengan final = true */
   onText: (text: string, final: boolean) => void;
   onError: (message: string) => void;
+  /** Esc saat mendengar: dibatalkan pengguna (bukan saat panel ditutup / komponen dilepas) */
+  onCancel?: () => void;
 }
+
+export type VoiceInput = ReturnType<typeof useVoiceInput>;
 
 export function useVoiceInput(handlers: VoiceHandlers, lang = "id-ID") {
   const supported = useSpeechSupported();
@@ -128,8 +132,23 @@ export function useVoiceInput(handlers: VoiceHandlers, lang = "id-ID") {
     release();
   }, [release]);
 
-  // Panel ditutup / mode sembunyikan angka → komponen dilepas → berhenti mendengar.
+  // Panel ditutup → komponen dilepas → berhenti mendengar.
   useEffect(() => () => cancel(), [cancel]);
+
+  // Esc = batal, di mana pun fokusnya (Safari macOS tidak memfokuskan tombol yang diklik). Fase capture
+  // di window berjalan sebelum pendengar Esc lain (tur desa, tampilan layar penuh), dan preventDefault
+  // membuat mereka mengabaikannya.
+  useEffect(() => {
+    if (!listening) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      e.preventDefault();
+      cancel();
+      latest.current.onCancel?.();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [listening, cancel]);
 
   return { supported, listening, start, stop, cancel };
 }

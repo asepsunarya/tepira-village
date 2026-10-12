@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { festivalFor, type SeasonKey } from "@/lib/season";
 import { LAMP_POSTS, SEA_Y } from "../layout";
@@ -48,8 +48,13 @@ export default function SeasonFx({ season, month, time }: { season: SeasonKey; m
   );
 }
 
+// stopPropagation dulu: pojok musim berdiri di pelataran Balai Desa, yang juga bisa diklik. Tanpa ini Balai
+// Desa tetap dianggap "di-hover" dan kursornya kembali panah saat pindah dari pojok ke pelataran.
 const pointer = {
-  onPointerOver: () => (document.body.style.cursor = "pointer"),
+  onPointerOver: (e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    document.body.style.cursor = "pointer";
+  },
   onPointerOut: () => (document.body.style.cursor = "")
 };
 
@@ -597,10 +602,11 @@ function Butterflies() {
       const yaw = Math.atan2(-Math.sin(a) * b.r * b.speed, Math.cos(a) * b.r * 0.7 * b.speed);
       const flap = 0.25 + Math.sin(t * 16 + b.phase) * 0.85;
       for (let w = 0; w < 2; w++) {
-        const side = w === 0 ? 1 : -1;
+        // Sayap kiri = sayap kanan diputar setengah putaran (bukan dicerminkan dengan skala −1: matriks
+        // instance bercermin membuat sisi depannya terbalik sehingga sayap itu tidak kena cahaya matahari).
         o.position.set(x, y, z);
-        o.rotation.set(0, yaw, side * flap, "YZX");
-        o.scale.set(side, 1, 1);
+        o.rotation.set(0, yaw + (w ? Math.PI : 0), flap, "YZX");
+        o.scale.set(1, 1, 1);
         o.updateMatrix();
         mesh.setMatrixAt(i * 2 + w, o.matrix);
       }
