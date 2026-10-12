@@ -1,10 +1,13 @@
 import { expenseCategories, type ExpenseCategoryKey } from "@/lib/categories";
+import type { KnownPlace } from "@/lib/game";
+import { matchKnownPlace, titleCase } from "@/lib/places";
 
 /**
  * "Catat cepat": satu kalimat bebas → isian form pengeluaran, dibaca di browser setiap ketikan.
  *   "bakso 15rb gopay"             → Rp15.000 · Makan harian · dompet GoPay
  *   "kemarin parkir 2rb"           → Rp2.000 · Transport · tanggal kemarin
  *   "spotify 54.900 kartu kredit"  → Rp54.900 · Langganan · dompet kartu kredit
+ *   "kopi 20rb @toko djawa"        → … · tempat "Toko Djawa" (titiknya ikut kalau pernah dicatat)
  * Hanya aturan dan kata kunci (tanpa AI). Bagian yang tidak terbaca dikembalikan null supaya form
  * memakai isiannya sendiri.
  */
@@ -25,6 +28,8 @@ export interface QuickEntry {
   daysAgo: number | null;
   /** "bonus" kalau ditulis "dari bonus" / "pakai bonus"; null = tidak disebut */
   source: "bonus" | null;
+  /** "@nama tempat"; titiknya terisi kalau cocok dengan tempat yang pernah dicatat */
+  place: { name: string; lat: number | null; lng: number | null } | null;
   /** sisa kalimat untuk catatan, mis. "Bakso" */
   note: string;
 }
@@ -142,12 +147,15 @@ function toNumber(raw: string, decimalAllowed: boolean) {
   return Number.NaN;
 }
 
-function findAmount(text: string) {
+/** `nameSpan`: bagian "@nama tempat"; angka tanpa satuan di situ bagian dari nama ("24 jam"). */
+function findAmount(text: string, nameSpan: { start: number; end: number } | null) {
   let explicit: (Hit & { value: number }) | null = null;
   let bare: (Hit & { value: number; assumed: boolean }) | null = null;
   AMOUNT.lastIndex = 0;
   for (let m = AMOUNT.exec(text); m; m = AMOUNT.exec(text)) {
     const [, , , prefix, digits, unit] = m;
+    const start = m.index + m[1].length;
+    if (!unit && !prefix && nameSpan && start >= nameSpan.start && start < nameSpan.end) continue;
     const n = toNumber(digits, Boolean(unit) && unit !== "perak");
     if (!Number.isFinite(n)) continue;
     let value = unit ? n * UNIT[unit] : n;
@@ -256,6 +264,20 @@ function detectCategory(text: string): ExpenseCategoryKey | null {
   return best;
 }
 
+// ── Tempat ───────────────────────────────────────────────────────────────────
+/** "@warung pak kumis": kata-kata setelah "@" sampai koma, titik koma, atau akhir kalimat. */
+const PLACE = /@\s*([^@,;]*)/u;
+
+/**
+ * Nama tempat dengan huruf seperti yang diketik ("KFC" tetap "KFC"); kalau diketik huruf kecil
+ * semua, tiap kata diawali huruf besar.
+ */
+function placeDisplayName(typed: string, original: string) {
+  const at = original.toLowerCase().indexOf(typed);
+  const asTyped = at >= 0 ? original.slice(at, at + typed.length) : "";
+  return asTyped && asTyped !== asTyped.toLowerCase() ? asTyped : titleCase(typed);
+}
+
 // ── Catatan ──────────────────────────────────────────────────────────────────
 function cleanNote(text: string) {
   const note = text
@@ -268,7 +290,12 @@ function cleanNote(text: string) {
   return note ? note[0].toUpperCase() + note.slice(1) : "";
 }
 
-export function parseQuickEntry(text: string, wallets: readonly QuickWallet[], today = new Date()): QuickEntry {
+export function parseQuickEntry(
+  text: string,
+  wallets: readonly QuickWallet[],
+  today = new Date(),
+  places: readonly KnownPlace[] = []
+): QuickEntry {
   let rest = text.toLowerCase();
 
   let source: QuickEntry["source"] = null;
@@ -296,17 +323,34 @@ export function parseQuickEntry(text: string, wallets: readonly QuickWallet[], t
     break;
   }
 
-  const amount = findAmount(rest);
+  const placeSpan = PLACE.exec(rest);
+  const amount = findAmount(rest, placeSpan && { start: placeSpan.index, end: placeSpan.index + placeSpan[0].length });
   if (amount) rest = blank(rest, amount);
+
+  // Nama tempat diambil setelah nominal & dompet dibuang, supaya "15rb gopay" sesudah "@…" tidak ikut.
+  let place: QuickEntry["place"] = null;
+  const at = PLACE.exec(rest);
+  if (at) {
+    const typed = at[1].replace(/\s+/g, " ").trim();
+    rest = `${rest.slice(0, at.index)} ${rest.slice(at.index + at[0].length)}`;
+    if (typed) {
+      const known = matchKnownPlace(typed, places);
+      place = known
+        ? { name: known.name, lat: known.lat, lng: known.lng }
+        : { name: placeDisplayName(typed, text), lat: null, lng: null };
+    }
+  }
 
   return {
     amount: amount?.value ?? null,
     assumedThousands: amount?.assumed ?? false,
     // Kata kategorinya tetap jadi catatan ("Bakso"), jadi dibaca dari sisa kalimat tanpa dibuang.
-    categoryKey: detectCategory(rest),
+    // Kalau catatannya tidak memberi petunjuk, nama tempat juga bisa ("@indomaret" → Belanja kecil).
+    categoryKey: detectCategory(rest) ?? (place ? detectCategory(place.name.toLowerCase()) : null),
     walletId,
     daysAgo,
     source,
+    place,
     note: cleanNote(rest)
   };
 }

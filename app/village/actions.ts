@@ -6,9 +6,11 @@ import { buildSnapshot, normalizePeriod } from "@/lib/snapshot";
 import {
   createExpenseWithWallet,
   deleteExpenseAndRestoreWallet,
-  updateExpenseWithWallet
+  updateExpenseWithWallet,
+  type ExpensePlace
 } from "@/lib/wallet-expenses";
 import { KNOWN_CATEGORY_LABELS, expenseCategories } from "@/lib/categories";
+import { roundCoord } from "@/lib/places";
 import type { ActionResult } from "@/lib/game";
 
 /**
@@ -151,6 +153,21 @@ export async function updateContribution(
 
 // ── Pengeluaran ──────────────────────────────────────────────────────────────
 
+type PlaceInput = { name?: string | null; lat?: number | null; lng?: number | null } | null;
+
+/**
+ * Lokasi opsional (peta jajan). undefined = tidak disentuh (saat edit), null = dihapus. Titik hanya
+ * disimpan kalau lintang & bujurnya sama-sama valid; nama boleh tanpa titik.
+ */
+function parsePlace(input: PlaceInput | undefined): ExpensePlace | undefined {
+  if (input === undefined) return undefined;
+  const placeName = clean(input?.name).slice(0, 120) || null;
+  const lat = input?.lat == null ? Number.NaN : Number(input.lat);
+  const lng = input?.lng == null ? Number.NaN : Number(input.lng);
+  const valid = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  return { placeName, latitude: valid ? roundCoord(lat) : null, longitude: valid ? roundCoord(lng) : null };
+}
+
 export async function addExpense(
   input: {
     amount: number;
@@ -159,6 +176,7 @@ export async function addExpense(
     source?: string;
     date?: string;
     walletId: number;
+    place?: PlaceInput;
   },
   period: Period
 ): Promise<ActionResult> {
@@ -176,7 +194,8 @@ export async function addExpense(
       note: clean(input.note) || null,
       source,
       date: dateRaw ? new Date(dateRaw) : new Date(),
-      walletId
+      walletId,
+      place: parsePlace(input.place)
     });
   });
 }
@@ -201,7 +220,8 @@ export async function updateExpense(
       source,
       // Kosong = tanggal lama dipertahankan (termasuk jam aslinya).
       date: dateRaw ? new Date(dateRaw) : undefined,
-      walletId
+      walletId,
+      place: parsePlace(input.place)
     });
   });
 }

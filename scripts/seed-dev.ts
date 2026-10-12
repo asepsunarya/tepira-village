@@ -102,19 +102,41 @@ async function main() {
     }
   });
 
+  // Tempat fiktif di sekitar Dago, Bandung, untuk peta jajan.
+  const PLACES = {
+    bakso: { placeName: "Bakso Pak Kumis", latitude: -6.89352, longitude: 107.61041 },
+    kopi: { placeName: "Kopi Toko Djawa", latitude: -6.91748, longitude: 107.60982 },
+    ampera: { placeName: "Warung Nasi Ampera Dago", latitude: -6.88512, longitude: 107.61387 },
+    indomaret: { placeName: "Indomaret Dago", latitude: -6.88579, longitude: 107.61362 },
+    spbu: { placeName: "SPBU Pertamina Dago", latitude: -6.87945, longitude: 107.61713 },
+    apotek: { placeName: "Apotek Kimia Farma Dago", latitude: -6.88731, longitude: 107.61329 }
+  };
   const expenses = [
-    { amount: 35_000, category: "Makan harian", note: "Makan siang", walletId: gopay.id, days: 0 },
+    { amount: 35_000, category: "Makan harian", note: "Makan siang", walletId: gopay.id, days: 0, place: PLACES.bakso },
     { amount: 22_000, category: "Transport", note: "Ojek", walletId: gopay.id, days: 1 },
     { amount: 1_800_000, category: "Listrik / Air / Kos", note: "Kos bulan ini", walletId: bca.id, days: 2 },
     { amount: 54_900, category: "Langganan (Spotify, Netflix, dll)", note: "Spotify", walletId: cc.id, days: 3 },
-    { amount: 120_000, category: "Nongkrong / jajan", note: "Kopi bareng teman", walletId: cash.id, days: 4 },
-    { amount: 48_000, category: "Makan harian", note: "Makan malam", walletId: cash.id, days: 5 }
+    { amount: 120_000, category: "Nongkrong / jajan", note: "Kopi bareng teman", walletId: cash.id, days: 4, place: PLACES.kopi },
+    { amount: 48_000, category: "Makan harian", note: "Makan malam", walletId: cash.id, days: 5, place: PLACES.ampera },
+    { amount: 30_000, category: "Transport", note: "Bensin", walletId: gopay.id, days: 2, place: PLACES.spbu },
+    { amount: 26_500, category: "Belanja kecil", note: "Sabun & sampo", walletId: gopay.id, days: 3, place: PLACES.indomaret },
+    { amount: 45_000, category: "Kesehatan / Obat", note: "Obat flu", walletId: cash.id, days: 5, place: PLACES.apotek },
+    { amount: 25_000, category: "Makan harian", note: "Bakso", walletId: cash.id, days: 6, place: PLACES.bakso }
   ];
   for (const e of expenses) {
     const d = ago(e.days);
     if (d.getMonth() + 1 !== month) continue;
     await prisma.expense.create({
-      data: { userId: user.id, amount: e.amount, category: e.category, note: e.note, source: "gaji", date: d, walletId: e.walletId }
+      data: {
+        userId: user.id,
+        amount: e.amount,
+        category: e.category,
+        note: e.note,
+        source: "gaji",
+        date: d,
+        walletId: e.walletId,
+        ...e.place
+      }
     });
   }
 
@@ -130,7 +152,9 @@ async function main() {
         note: "Jajan sore",
         source: "gaji",
         date: ago(days),
-        walletId: cash.id
+        walletId: cash.id,
+        // sebagian di kedai kopi yang sama, supaya "tempat yang pernah dicatat" terisi
+        ...(days % 3 === 0 ? PLACES.kopi : {})
       }
     });
   }
