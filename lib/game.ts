@@ -42,6 +42,19 @@ export interface ExpenseView {
   date: string;
   walletId: number | null;
   walletName: string | null;
+  /** Lokasi opsional (peta jajan). Nama boleh tanpa titik; titik tanpa nama tetap muncul di peta. */
+  placeName: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+/** Tempat yang pernah dicatat lengkap dengan titiknya, untuk dipakai ulang (chip & "@nama" di catat cepat). */
+export interface KnownPlace {
+  name: string;
+  lat: number;
+  lng: number;
+  /** berapa kali dipakai dalam setahun terakhir */
+  count: number;
 }
 
 export interface SalaryAllocationView {
@@ -112,6 +125,8 @@ export interface Snapshot {
   activityDays: number[];
   /** Insight mingguan tepira terbaru sampai bulan yang dilihat, null kalau belum ada. */
   insight: InsightView | null;
+  /** Tempat jajan yang pernah dicatat (setahun terakhir), paling sering dulu. */
+  places: KnownPlace[];
   totals: {
     totalSaved: number;
     contributionCount: number;

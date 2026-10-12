@@ -51,6 +51,8 @@ export default function Scene() {
   const goalCount = useVillage((s) => s.snapshot?.goals.length ?? 0);
   const walletCount = useVillage((s) => s.snapshot?.wallets.length ?? 0);
   const setPanel = useVillage((s) => s.setPanel);
+  // Selama peta jajan terbuka, desa berhenti merender: peta punya kanvas WebGL sendiri.
+  const paused = useVillage((s) => s.panel === "jajan");
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
 
   const time = timeSetting === "auto" ? autoTime(health) : timeSetting;
@@ -68,6 +70,7 @@ export default function Scene() {
     <Canvas
       shadows
       dpr={[1, 2]}
+      frameloop={paused ? "never" : "always"}
       className="canvas"
       onPointerMissed={() => setPanel(null)}
     >

@@ -78,6 +78,32 @@ Enter langsung menyimpan. Pengurainya `lib/quick-entry.ts`: murni aturan & kata 
   Setelah tersimpan, dompet & kategori tetap (seperti form biasa), tanggal kembali ke bawaan.
 - Ikut mode sembunyikan angka: kolomnya ikut ditutup, sama seperti kolom nominal.
 
+## Peta jajan
+
+Pengeluaran boleh punya **tempat** (nama dan/atau titik). Tombol **🗺️ Peta jajan** (kontrol atas, atau panel Bulan
+ini) membuka peta bulan yang dilihat: satu lingkaran per tempat, warna = kategori terbanyak, besar = nominal (sama
+rata saat angka disembunyikan), plus daftar tempat teratas dan porsinya. Selama peta terbuka, scene 3D berhenti
+merender.
+
+Cara mengisi tempat (isian **📍 Tempat** di form Catat dan di ✏️ Riwayat):
+- **📍** = lokasi sekarang dari browser (perlu izin; hanya https/localhost) + nama tempat terdekat dari OpenStreetMap.
+- **Enter** di kolom tempat = cari di peta (Indonesia, diutamakan yang dekat).
+- **Chip** tempat yang pernah dicatat (setahun terakhir, paling sering dulu) = nama + titiknya sekaligus.
+- **Catat cepat:** `kopi 20rb @toko djawa`. Kalau cocok dengan tempat yang pernah dicatat (boleh sebagian nama:
+  `@kumis` → "Bakso Pak Kumis"), titiknya ikut; kalau tidak, tersimpan sebagai nama tanpa titik.
+
+Layanan luar (tanpa API key): peta dasar **OpenFreeMap** (`tiles.openfreemap.org`, data © OpenStreetMap) lewat
+MapLibre GL, dan **Nominatim** untuk nama tempat & pencarian. Nominatim hanya dipanggil saat tombol/Enter ditekan,
+sesuai aturan pakainya (maks. 1 permintaan/detik, tanpa autocomplete). MapLibre (±250 kB) dimuat hanya saat panel peta
+dibuka; worker-nya disalin webpack sebagai aset (`setWorkerUrl` di `components/village/ui/JajanMap.tsx`).
+
+**Butuh kolom baru di database.** Kolom `placeName`, `latitude`, `longitude` di `Expense` dimiliki repo tepira
+(migrasi `20261012150000_add_expense_place`). Urutan rilis:
+1. Merge PR skema di tepira, lalu jalankan `npm run migrate:deploy` di sana dengan `DATABASE_URL` produksi.
+2. Baru deploy perubahan desa ini. Kalau desa jalan duluan, semua query pengeluaran gagal karena kolomnya belum ada.
+
+Untuk DB lokal cukup `npm run db:push:dev` lagi.
+
 Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server hanya
 mengirim daftar hari yang punya catatan (`activityDays`, 400 hari terakhir). Tanda nol pengeluaran (hari ini dan
 2 hari sebelumnya), surat yang sudah dibuka, dan warga/level yang sudah dirayakan disimpan per user di
@@ -97,20 +123,22 @@ lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
   wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
-  quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, catatan
+  quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
+  places.ts               peta jajan: pencocokan tempat, pengelompokan per tempat, warna kategori
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
 components/village/
   store.ts                zustand: snapshot dari server + preferensi visual (localStorage)
   daily.ts                localStorage per user: tanda nol pengeluaran, surat terbaca, perayaan yang sudah tampil
+  geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
   useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
                           StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
-                          Surat), SalaryPanel, PinGate, Tutorial
+                          Surat / Peta jajan), SalaryPanel, PlacePicker, JajanMap (MapLibre), PinGate, Tutorial
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)

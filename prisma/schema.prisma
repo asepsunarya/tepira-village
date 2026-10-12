@@ -107,6 +107,10 @@ model Expense {
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   walletId  Int?
   wallet    Wallet?  @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  // Lokasi opsional untuk "peta jajan" di tepira-village; null = tanpa lokasi.
+  placeName String?
+  latitude  Float?
+  longitude Float?
 
   @@index([userId])
   @@index([walletId])

@@ -19,6 +19,16 @@ function reverseExpenseFromWalletBalance(currentBalance: number, isDebt: boolean
   return isDebt ? currentBalance - amount : currentBalance + amount;
 }
 
+/**
+ * Lokasi opsional pengeluaran (peta jajan). Hanya dipakai desa; tepira belum menulisnya dan
+ * tidak memengaruhi aturan saldo dompet di bawah.
+ */
+export interface ExpensePlace {
+  placeName: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
 async function resolveRequiredWallet(tx: Tx, userId: string, walletId: number) {
   const wallet = walletId
     ? await tx.wallet.findFirst({ where: { id: walletId, ...userOwnedWhere(userId) } })
@@ -36,6 +46,7 @@ export async function createExpenseWithWallet(
     source?: string | null;
     date?: Date;
     walletId: number;
+    place?: ExpensePlace;
   }
 ) {
   return prisma.$transaction(async (tx) => {
@@ -48,7 +59,8 @@ export async function createExpenseWithWallet(
         source: data.source || "gaji",
         date: data.date || new Date(),
         userId,
-        walletId: wallet.id
+        walletId: wallet.id,
+        ...data.place
       },
       include: { wallet: true }
     });
@@ -100,6 +112,8 @@ export async function updateExpenseWithWallet(
     source?: string | null;
     date?: Date;
     walletId: number;
+    /** undefined = lokasi lama dipertahankan */
+    place?: ExpensePlace;
   }
 ) {
   return prisma.$transaction(async (tx) => {
@@ -130,7 +144,8 @@ export async function updateExpenseWithWallet(
         note: data.note || null,
         source: data.source || "gaji",
         date: data.date ?? expense.date,
-        walletId: wallet.id
+        walletId: wallet.id,
+        ...data.place
       },
       include: { wallet: true }
     });

@@ -20,6 +20,7 @@ test("contoh utama: nominal, kategori, dompet, catatan", () => {
     walletId: 2,
     daysAgo: null,
     source: null,
+    place: null,
     note: "Bakso"
   });
 });
@@ -142,6 +143,37 @@ test("kalimat kosong", () => {
     walletId: null,
     daysAgo: null,
     source: null,
+    place: null,
     note: ""
   });
+});
+
+const PLACES = [
+  { name: "Bakso Pak Kumis", lat: -6.8935, lng: 107.6104, count: 5 },
+  { name: "Indomaret Dago", lat: -6.8858, lng: 107.6136, count: 3 }
+];
+const parseAt = (text: string) => parseQuickEntry(text, WALLETS, TODAY, PLACES);
+
+test("tempat: @nama, nominal & dompet sesudahnya tidak ikut jadi nama", () => {
+  const p = parseAt("bakso @warung bu imas 15rb gopay");
+  assert.deepEqual(p.place, { name: "Warung Bu Imas", lat: null, lng: null });
+  assert.equal(p.amount, 15_000);
+  assert.equal(p.walletId, 2);
+  assert.equal(p.note, "Bakso");
+  assert.equal(parseAt("makan 20rb @warung, enak").place?.name, "Warung");
+  assert.equal(parseAt("makan 20rb @").place, null);
+});
+
+test("tempat: cocok dengan tempat yang pernah dicatat (titiknya ikut)", () => {
+  assert.deepEqual(parseAt("makan 25rb @bakso pak kumis").place, { name: "Bakso Pak Kumis", lat: -6.8935, lng: 107.6104 });
+  // sebagian nama cukup
+  assert.equal(parseAt("makan 25rb @kumis").place?.lat, -6.8935);
+});
+
+test("tempat: huruf seperti diketik, kategori dari nama tempat kalau catatannya diam", () => {
+  assert.equal(parseAt("50rb @KFC").place?.name, "KFC");
+  assert.equal(parseAt("30rb @indomaret").categoryKey, "belanja_kecil");
+  assert.equal(parseAt("30rb @indomaret").place?.name, "Indomaret Dago");
+  // angka tanpa satuan di nama tempat bukan nominal
+  assert.equal(parseAt("roti 15000 @indomaret 24 jam").amount, 15_000);
 });

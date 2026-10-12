@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { ContributionView, ExpenseView, GoalPace, GoalView, WalletView } from "@/lib/game";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import dynamic from "next/dynamic";
+import type { ContributionView, ExpenseView, GoalPace, GoalView, KnownPlace, WalletView } from "@/lib/game";
 import {
   MAX_VILLAGERS,
   NOSPEND_BACKFILL_DAYS,
@@ -28,11 +29,22 @@ import {
   todayInputValue
 } from "@/lib/format";
 import { parseQuickEntry, type QuickEntry } from "@/lib/quick-entry";
+import { categoryColor, spendingByPlace } from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
 import { useLetter, useStreak, useVillageXp } from "../useProgress";
 import { Money } from "./Money";
 import { AmountInput, CATEGORY_GROUPS } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
+import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
+import type { MapFocus } from "./JajanMap";
+
+// MapLibre (±250 kB) hanya dimuat saat panel peta dibuka.
+const JajanMap = dynamic(() => import("./JajanMap"), {
+  ssr: false,
+  loading: () => <div className="jajan-map loading">Memuat peta…</div>
+});
+
+const NO_PLACES: KnownPlace[] = [];
 
 const QUICK_AMOUNTS = [5_000, 10_000, 20_000, 50_000, 100_000, 500_000];
 
@@ -53,9 +65,19 @@ function CategorySelect({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
-function PanelShell({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+function PanelShell({
+  title,
+  children,
+  onClose,
+  wide = false
+}: {
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+  wide?: boolean;
+}) {
   return (
-    <aside className="panel card" data-tour="panel">
+    <aside className={`panel card ${wide ? "wide" : ""}`} data-tour="panel">
       <header>
         <h2>{title}</h2>
         <button className="icon-btn" onClick={onClose} title="Tutup">✕</button>
@@ -472,6 +494,9 @@ function SpendPanel() {
   const sameMonth = dateMonth === viewKey;
   const hasBudget = Boolean(salary) || (summary !== undefined && summary.budget.status !== "NO_BUDGET");
 
+  const places = useVillage((s) => s.snapshot?.places ?? NO_PLACES);
+  const [place, setPlace] = useState<PlaceValue>(NO_PLACE);
+
   // ⚡ Catat cepat: kalimat ("bakso 15rb gopay") langsung mengisi form di bawahnya.
   const moneyVisible = useMoneyVisible();
   const [quick, setQuick] = useState("");
@@ -479,9 +504,9 @@ function SpendPanel() {
   const [quickHint, setQuickHint] = useState<string | null>(null);
   // Isian sebelum mulai mengetik (atau yang diubah manual sesudahnya): dipakai lagi untuk bagian
   // yang tidak disebut di kalimat, jadi menghapus "gopay" mengembalikan dompet semula.
-  const base = useRef({ category, walletId, date, source });
+  const base = useRef({ category, walletId, date, source, place });
   const typeQuick = (text: string) => {
-    if (!quick.trim() && text.trim()) base.current = { category, walletId, date, source };
+    if (!quick.trim() && text.trim()) base.current = { category, walletId, date, source, place };
     setQuick(text);
     setQuickHint(null);
     if (!text.trim()) {
@@ -494,17 +519,23 @@ function SpendPanel() {
         setWalletId(base.current.walletId);
         setDate(base.current.date);
         setSource(base.current.source);
+        setPlace(base.current.place);
       }
       return;
     }
-    const p = parseQuickEntry(text, wallets);
+    const p = parseQuickEntry(text, wallets, new Date(), places);
     setParsed(p);
     setAmount(p.amount ?? 0);
     setCategory(p.categoryKey ? getCategoryLabel(p.categoryKey) : base.current.category);
     setWalletId(p.walletId ?? base.current.walletId);
     setDate(p.daysAgo !== null ? inputDateDaysAgo(p.daysAgo) : base.current.date);
     setSource(p.source ?? base.current.source);
+    setPlace(p.place ? { ...p.place, from: p.place.lat !== null ? "known" : undefined } : base.current.place);
     setNote(p.note);
+  };
+  const pickPlace = (v: PlaceValue) => {
+    setPlace(v);
+    base.current.place = v;
   };
   const pickCategory = (v: string) => {
     setCategory(v);
@@ -527,12 +558,14 @@ function SpendPanel() {
     e.preventDefault();
     if (amount <= 0 || !walletId) return;
     const fromQuick = Boolean(quick.trim());
-    const ok = await spend({ amount, category, note, source, date, walletId });
+    const ok = await spend({ amount, category, note, source, date, walletId, place: placeInput(place) });
     if (ok) {
       setAmount(0);
       setNote("");
       setQuick("");
       setParsed(null);
+      // Tempat tidak terbawa ke catatan berikutnya: lebih aman daripada titik yang salah di peta.
+      setPlace(NO_PLACE);
       if (fromQuick) {
         // Tiap kalimat menyebut tanggalnya sendiri; yang berikutnya mulai dari tanggal bawaan lagi.
         // Dompet & kategori tetap seperti form biasa.
@@ -586,6 +619,7 @@ function SpendPanel() {
                 wallet={wallets.find((w) => w.id === walletId)}
                 date={date}
                 source={source}
+                place={place}
               />
             )}
             {quickHint && <p className="cat-hint warn">{quickHint}</p>}
@@ -641,6 +675,7 @@ function SpendPanel() {
           Catatan (opsional)
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makan siang" />
         </label>
+        <PlacePicker value={place} onChange={pickPlace} places={places} />
         <button className="primary spend" type="submit" data-tour="spend-submit" disabled={loading || amount <= 0 || !walletId}>
           💸 Catat {amount > 0 ? formatRupiah(amount) : ""}
         </button>
@@ -657,7 +692,8 @@ function QuickPreview({
   category,
   wallet,
   date,
-  source
+  source,
+  place
 }: {
   parsed: QuickEntry;
   amount: number;
@@ -665,6 +701,7 @@ function QuickPreview({
   wallet: WalletView | undefined;
   date: string;
   source: "gaji" | "bonus";
+  place: PlaceValue;
 }) {
   return (
     <div className="quick-preview" id="quick-preview" aria-live="polite">
@@ -676,6 +713,12 @@ function QuickPreview({
       </span>
       <span className={`qchip ${parsed.daysAgo !== null ? "found" : ""}`}>{inputDateLabel(date)}</span>
       {source === "bonus" && <span className={`qchip ${parsed.source ? "found" : ""}`}>dari bonus</span>}
+      {place.name && (
+        <span className={`qchip ${parsed.place ? "found" : ""}`}>
+          📍 {place.name}
+          {place.lat === null ? " · tanpa titik" : ""}
+        </span>
+      )}
       {parsed.assumedThousands && <small className="muted">angka kecil dianggap ribuan</small>}
     </div>
   );
@@ -890,6 +933,14 @@ function ExpenseEditForm({ expense, onDone }: { expense: ExpenseView; onDone: ()
   const [source, setSource] = useState<"gaji" | "bonus">(expense.source === "bonus" ? "bonus" : "gaji");
   const [date, setDate] = useState(originalDate);
   const [note, setNote] = useState(expense.note ?? "");
+  const places = useVillage((s) => s.snapshot?.places ?? NO_PLACES);
+  const [place, setPlace] = useState<PlaceValue>({
+    name: expense.placeName ?? "",
+    lat: expense.latitude,
+    lng: expense.longitude,
+    // Titik lama tetap kalau cuma namanya yang diperbaiki.
+    from: expense.latitude !== null ? "gps" : undefined
+  });
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (amount <= 0 || !walletId) return;
@@ -899,7 +950,8 @@ function ExpenseEditForm({ expense, onDone }: { expense: ExpenseView; onDone: ()
       note,
       source,
       date: date !== originalDate ? date : undefined,
-      walletId
+      walletId,
+      place: placeInput(place)
     });
     if (ok) onDone();
   };
@@ -943,6 +995,7 @@ function ExpenseEditForm({ expense, onDone }: { expense: ExpenseView; onDone: ()
         Catatan
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="opsional" />
       </label>
+      <PlacePicker value={place} onChange={setPlace} places={places} />
       {walletId !== expense.walletId && (
         <small className="muted">Saldo dikembalikan ke dompet lama lalu dipotong dari dompet baru.</small>
       )}
@@ -990,7 +1043,7 @@ function LogPanel() {
       kind: "spend",
       amount: e.amount,
       title: e.category || "Pengeluaran",
-      sub: [e.note, e.walletName].filter(Boolean).join(" · ") || undefined,
+      sub: [e.note, e.walletName, e.placeName && `📍 ${e.placeName}`].filter(Boolean).join(" · ") || undefined,
       expense: e
     });
   rows.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
@@ -1069,9 +1122,14 @@ function MonthPanel() {
           <div className="log-row spend"><span className="log-text">Pengeluaran ({summary.expenses.count}x)</span><b className="spend-text"><Money value={summary.expenses.total} /></b></div>
           <div className="log-row"><span className="log-text">Budget pengeluaran</span><b>{summary.budget.status === "NO_BUDGET" ? "—" : <Money value={summary.budget.limit} />}</b></div>
         </div>
-        <button className="pill salary-open" onClick={() => setPanel("salary")}>
-          💰 Atur alokasi gaji
-        </button>
+        <div className="chips">
+          <button className="pill salary-open" onClick={() => setPanel("salary")}>
+            💰 Atur alokasi gaji
+          </button>
+          <button className="pill" onClick={() => setPanel("jajan")}>
+            🗺️ Peta jajan
+          </button>
+        </div>
         <p className="muted small">Bonus dan saldo awal masih diatur lewat tepira.id (halaman Bonus / Saldo Awal).</p>
       </section>
       <section>
@@ -1084,6 +1142,92 @@ function MonthPanel() {
           </div>
         ))}
       </section>
+    </>
+  );
+}
+
+// ── Peta jajan ───────────────────────────────────────────────────────────────
+
+/** "Langganan (Spotify, Netflix, dll)" → "Langganan" */
+const shortCategory = (label: string) => label.replace(/\s*\(.*\)$/, "");
+
+function JajanPanel() {
+  const snapshot = useVillage((s) => s.snapshot);
+  const expenses = snapshot?.expenses;
+  const setPanel = useVillage((s) => s.setPanel);
+  const moneyVisible = useMoneyVisible();
+  const [focus, setFocus] = useState<MapFocus | null>(null);
+  const located = useMemo(() => (expenses ?? []).filter((e) => e.latitude !== null && e.longitude !== null), [expenses]);
+  const spots = useMemo(() => spendingByPlace(located), [located]);
+  if (!snapshot) return null;
+
+  const { summary, places } = snapshot;
+  const locatedTotal = located.reduce((s, e) => s + e.amount, 0);
+  const share = summary.expenses.total > 0 ? Math.round((locatedTotal / summary.expenses.total) * 100) : 0;
+  const categories = [...new Set(spots.map((s) => s.topCategory).filter((c): c is string => Boolean(c)))];
+  const home = places[0] ? { lat: places[0].lat, lng: places[0].lng } : null;
+
+  return (
+    <>
+      <p className="intro">
+        {monthLabel(summary.month, summary.year)} · <b>{located.length}</b> dari {snapshot.expenses.length} pengeluaran punya
+        lokasi{moneyVisible && located.length > 0 ? ` (${share}% nominal)` : ""}.
+      </p>
+      <JajanMap spots={spots} focus={focus} hideMoney={!moneyVisible} home={home} />
+      {categories.length > 0 && (
+        <div className="jajan-legend">
+          {categories.map((c) => (
+            <span key={c}>
+              <i style={{ background: categoryColor(c) }} />
+              {shortCategory(c)}
+            </span>
+          ))}
+        </div>
+      )}
+      {spots.length === 0 ? (
+        <div className="jajan-empty">
+          <b>Belum ada pengeluaran berlokasi di bulan ini.</b>
+          <span>
+            Saat mencatat, tekan <b>📍</b> di isian Tempat, atau tulis <i>@nama tempat</i> di catat cepat, misalnya{" "}
+            <i>kopi 20rb @toko djawa</i>. Catatan lama bisa diberi tempat lewat ✏️ di Riwayat.
+          </span>
+          <div className="chips">
+            <button className="pill" onClick={() => setPanel("spend")}>💸 Catat pengeluaran</button>
+            <button className="pill" onClick={() => setPanel("log")}>📜 Riwayat</button>
+          </div>
+        </div>
+      ) : (
+        <section>
+          <h3>📍 Tempat teratas</h3>
+          <div className="spot-list">
+            {spots.slice(0, 8).map((s, i) => (
+              <button
+                key={s.key}
+                className="spot-row"
+                onClick={() => setFocus((f) => ({ key: s.key, n: (f?.n ?? 0) + 1 }))}
+                title="Lihat di peta"
+              >
+                <span className="spot-rank">{i + 1}</span>
+                <i className="spot-dot" style={{ background: categoryColor(s.topCategory) }} />
+                <span className="spot-main">
+                  <b>{s.name ?? "Titik tanpa nama"}</b>
+                  <small className="muted block">
+                    {s.count}× · {s.topCategory ? shortCategory(s.topCategory) : "Lainnya"}
+                  </small>
+                </span>
+                <span className="spot-total">
+                  <Money value={s.total} />
+                  {moneyVisible && locatedTotal > 0 && <small className="muted block">{Math.round((s.total / locatedTotal) * 100)}%</small>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      <p className="muted small">
+        Titik di peta = tempat, warna = kategori terbanyak, besar = nominal. Peta dasar: OpenFreeMap · © OpenStreetMap
+        contributors.
+      </p>
     </>
   );
 }
@@ -1264,7 +1408,8 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   log: "📜 Riwayat",
   month: "📊 Bulan ini",
   village: "🏝️ Perkembangan desa",
-  letter: "💌 Surat dari Cyrene"
+  letter: "💌 Surat dari Cyrene",
+  jajan: "🗺️ Peta jajan"
 };
 
 export default function Panels() {
@@ -1272,7 +1417,7 @@ export default function Panels() {
   const setPanel = useVillage((s) => s.setPanel);
   if (!panel) return null;
   return (
-    <PanelShell title={TITLES[panel]} onClose={() => setPanel(null)}>
+    <PanelShell title={TITLES[panel]} onClose={() => setPanel(null)} wide={panel === "jajan"}>
       {panel === "goals" && <GoalsPanel />}
       {panel === "save" && <SavePanel />}
       {panel === "spend" && <SpendPanel />}
@@ -1282,6 +1427,7 @@ export default function Panels() {
       {panel === "month" && <MonthPanel />}
       {panel === "village" && <VillagePanel />}
       {panel === "letter" && <LetterPanel />}
+      {panel === "jajan" && <JajanPanel />}
     </PanelShell>
   );
 }

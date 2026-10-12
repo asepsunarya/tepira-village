@@ -171,6 +171,13 @@ export default function HUD() {
             </button>
           ))}
         </div>
+        <button
+          className={`card pill-lg ${panel === "jajan" ? "on" : ""}`}
+          onClick={() => setPanel(panel === "jajan" ? null : "jajan")}
+          title="Di mana uangmu paling banyak keluar"
+        >
+          🗺️ Peta jajan
+        </button>
         <button className={`card pill-lg ${ui.showLabels ? "on" : ""}`} onClick={() => toggleUi("showLabels")}>🏷️ Label</button>
         <button className={`card pill-lg ${ui.freeze ? "on" : ""}`} onClick={() => toggleUi("freeze")}>🧊 Kunci kamera</button>
         <button className="card pill-lg" onClick={resetView} title="Kembali ke sudut pandang awal">🎯 Reset view</button>

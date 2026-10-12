@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
 import { ACTIVITY_WINDOW_DAYS, DAY_MS, healthStatusFor, wibDay, type SalaryView, type Snapshot } from "@/lib/game";
+import { knownPlacesFrom } from "@/lib/places";
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -61,8 +62,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
   const ownerWhere = userOwnedWhere(userId);
   const { start, end } = monthRange(month, year);
   const activitySince = new Date(Date.now() - (ACTIVITY_WINDOW_DAYS + 1) * DAY_MS);
+  const placesSince = new Date(Date.now() - 366 * DAY_MS);
 
-  const [user, goals, wallets, expenses, salary, bonus, balance, previousSalary, activityExpenses, insight] = await Promise.all([
+  const [user, goals, wallets, expenses, salary, bonus, balance, previousSalary, activityExpenses, insight, placeRows] =
+    await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, image: true } }),
     prisma.goal.findMany({
       where: ownerWhere,
@@ -98,6 +101,19 @@ export async function buildSnapshot(userId: string, month: number, year: number)
     prisma.weeklyFinancialInsight.findFirst({
       where: { AND: [ownerWhere, { OR: [{ year: { lt: year } }, { year, month: { lte: month } }] }] },
       orderBy: { weekStart: "desc" }
+    }),
+    // Tempat jajan setahun terakhir untuk dipakai ulang (lihat knownPlacesFrom).
+    prisma.expense.findMany({
+      where: {
+        ...ownerWhere,
+        date: { gte: placesSince },
+        placeName: { not: null },
+        latitude: { not: null },
+        longitude: { not: null }
+      },
+      select: { placeName: true, latitude: true, longitude: true },
+      orderBy: { date: "desc" },
+      take: 500
     })
   ]);
 
@@ -184,7 +200,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       source: e.source || "gaji",
       date: e.date.toISOString(),
       walletId: e.walletId,
-      walletName: e.wallet?.name ?? null
+      walletName: e.wallet?.name ?? null,
+      placeName: e.placeName,
+      latitude: e.latitude,
+      longitude: e.longitude
     })),
     summary: {
       month,
@@ -228,6 +247,7 @@ export async function buildSnapshot(userId: string, month: number, year: number)
           recommendations: Array.isArray(insight.recommendations) ? insight.recommendations.map(String) : []
         }
       : null,
+    places: knownPlacesFrom(placeRows),
     totals: {
       totalSaved,
       contributionCount: allContributions.length,

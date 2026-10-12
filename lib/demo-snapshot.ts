@@ -229,7 +229,10 @@ export function createDemoSnapshot(now = new Date()): Snapshot {
     source: "gaji",
     date: at(0, day),
     walletId: wallets[walletIndex].id,
-    walletName: wallets[walletIndex].name
+    walletName: wallets[walletIndex].name,
+    placeName: null,
+    latitude: null,
+    longitude: null
   }));
 
   const prev = new Date(year, month - 2, 1);
@@ -244,6 +247,7 @@ export function createDemoSnapshot(now = new Date()): Snapshot {
       previousSalary: { ...demoSalary(7000), month: prev.getMonth() + 1, year: prev.getFullYear() },
       activityDays: demoActivityDays(now),
       insight: null,
+      places: [],
       pinRequired: false,
       devLogin: false,
       generatedAt: now.toISOString()

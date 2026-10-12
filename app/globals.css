@@ -432,6 +432,46 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
   .streak-row.todo .streak-today { animation: none; }
 }
 
+/* ---------- peta jajan ---------- */
+.panel.wide { width: min(720px, calc(100vw - 32px)); }
+.jajan-map { position: relative; height: 340px; flex-shrink: 0; border-radius: 16px; overflow: hidden; border: 2px solid #f6ebf0; background: #eef0f2; }
+.jajan-map.loading { display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.jajan-map .maplibregl-ctrl-attrib { font-size: 10px; }
+.jajan-popup { display: flex; flex-direction: column; gap: 2px; font-family: inherit; color: var(--ink); }
+.jajan-popup b { font-size: 13px; font-weight: 900; }
+.jajan-popup span { font-size: 12px; font-weight: 800; }
+.jajan-popup small { font-size: 11px; font-weight: 700; color: var(--ink-soft); }
+.maplibregl-popup-content { border-radius: 12px; padding: 8px 12px; box-shadow: var(--shadow); }
+.jajan-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; font-weight: 800; color: var(--ink-soft); }
+.jajan-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.jajan-legend i, .spot-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.jajan-empty { display: flex; flex-direction: column; gap: 6px; background: #fff; border-radius: 14px; padding: 12px; border: 2px dashed #f1e4ea; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+.jajan-empty b { color: var(--ink); }
+.spot-list { display: flex; flex-direction: column; gap: 6px; }
+.spot-row { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: #fff; border-radius: 12px; padding: 8px 10px; border: 2px solid #f6ebf0; font-size: 13px; font-weight: 700; transition: border-color 0.15s; }
+.spot-row:hover { border-color: #ffbdd8; }
+.spot-rank { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #f8f0f4; font-size: 11px; font-weight: 900; color: var(--ink-soft); flex-shrink: 0; }
+.spot-main { flex: 1; min-width: 0; }
+.spot-main b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spot-total { text-align: right; font-weight: 900; white-space: nowrap; }
+
+.place-picker { display: flex; flex-direction: column; gap: 4px; }
+.place-picker > label { font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.place-row { display: flex; gap: 6px; align-items: center; }
+.place-row input { flex: 1; min-width: 0; }
+.place-row .icon-btn { width: 38px; height: 38px; font-size: 16px; }
+.place-status { font-size: 11px; font-weight: 800; color: var(--ink-soft); }
+.place-status.ok { color: #1f8a63; }
+.place-status.warn { color: #a87a12; }
+.place-results { display: flex; flex-direction: column; gap: 4px; }
+.place-result { text-align: left; background: #fff; border: 2px solid #f1e4ea; border-radius: 10px; padding: 6px 10px; font-size: 12px; }
+.place-result:hover { border-color: #ffbdd8; }
+.place-result small { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 640px) {
+  .jajan-map { height: 260px; }
+}
+
 /* ---------- catat cepat ---------- */
 .quick-entry { display: flex; flex-direction: column; gap: 6px; background: #fff8ec; border: 2px solid #f6dca0; border-radius: 14px; padding: 10px; }
 .add-form .quick-entry label { color: #a87a12; }
