@@ -353,7 +353,8 @@ export const TOUR_STEPS: TourStep[] = [
                 T(
                   "spend-form",
                   <>
-                    Isi nominal & kategori, pilih dompetnya, lalu tekan <b>💸 Catat</b>.
+                    Ketik seperti chat di <b>⚡ Catat cepat</b>, misalnya <i>kopi 20rb gopay</i>, lalu Enter. Atau isi
+                    nominal & kategori sendiri, pilih dompetnya, lalu tekan <b>💸 Catat</b>.
                     {c.snapshot.salary ? " Sisa jatah kategorinya dari alokasi gaji langsung kelihatan." : ""}
                   </>
                 )

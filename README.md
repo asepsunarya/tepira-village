@@ -53,6 +53,31 @@ Supaya desa punya alasan dibuka setiap hari, bukan hanya saat menabung:
 - **Perayaan.** Warga baru dan bangunan yang baru terbuka dirayakan sekali (notifikasi + toast di lokasinya),
   termasuk yang bertambah sejak kunjungan terakhir.
 
+## Catat cepat
+
+Kolom **⚡ Catat cepat** di atas form Catat membaca satu kalimat dan mengisi form di bawahnya setiap ketikan;
+Enter langsung menyimpan. Pengurainya `lib/quick-entry.ts`: murni aturan & kata kunci, tanpa AI dan tanpa server.
+
+| Ditulis                               | Terbaca sebagai                                                        |
+| ------------------------------------- | ---------------------------------------------------------------------- |
+| `bakso 15rb gopay`                    | Rp15.000 · Makan harian · dompet GoPay · catatan "Bakso"                |
+| `kemarin parkir 2rb`                  | Rp2.000 · Transport · tanggal kemarin (lampu streak kemarin ikut menyala) |
+| `spotify 54.900 kartu kredit`         | Rp54.900 · Langganan · dompet kartu kredit                              |
+| `kado dari bonus 200rb`               | Rp200.000 · Sosial · sumber Bonus                                       |
+| `bakso 15`                            | Rp15.000 (angka tanpa satuan di bawah 1.000 dianggap ribuan)            |
+
+- **Nominal:** `15rb`, `15 ribu`, `15k`, `1,5jt`, `1.5 juta`, `15.000`, `Rp15.000`, `500 perak`. Angka yang menempel ke
+  huruf (`2x`, `im3`) diabaikan; kalau ada beberapa angka, yang bersatuan menang, kalau tidak yang terbesar.
+- **Tanggal:** `hari ini`/`tadi`, `kemarin`, `kemarin lusa`, `3 hari lalu`, `tgl 10` (bulan ini, atau bulan lalu kalau
+  tanggalnya belum lewat).
+- **Dompet:** nama dompet (atau kata khasnya: "BCA" dari "Kartu kredit BCA"), sebutan jenis (`tunai`/`cash`, `kk`,
+  `transfer`, `paylater`), boleh dengan `pakai`/`via`/`dari`. Sebutan terpanjang menang; kalau sama panjang, nama
+  lengkap menang atas kata khas ("bca" → dompet "BCA", bukan "Kartu kredit BCA").
+- **Kategori:** kata kunci per kategori tepira; frasa panjang dicek dulu ("pasta gigi" → Belanja kecil, bukan Kesehatan).
+- Yang tidak disebut di kalimat memakai isian form sebelum mulai mengetik; menghapus kalimat mengembalikannya.
+  Setelah tersimpan, dompet & kategori tetap (seperti form biasa), tanggal kembali ke bawaan.
+- Ikut mode sembunyikan angka: kolomnya ikut ditutup, sama seperti kolom nominal.
+
 Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server hanya
 mengirim daftar hari yang punya catatan (`activityDays`, 400 hari terakhir). Tanda nol pengeluaran (hari ini dan
 2 hari sebelumnya), surat yang sudah dibuka, dan warga/level yang sudah dirayakan disimpan per user di
@@ -72,6 +97,8 @@ lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
   wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
+  quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, catatan
+  *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
 components/village/
@@ -147,7 +174,7 @@ Jangan pernah menjalankan `db:push:dev` ke database produksi; skema & migrasi di
 ### Build & deploy
 
 ```bash
-npm run typecheck && npm run lint && npm run build
+npm run typecheck && npm run lint && npm test && npm run build
 ```
 
 Deploy ke Vercel seperti tepira. `postinstall` menjalankan `prisma generate`.

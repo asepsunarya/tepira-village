@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"lib/**/*.test.ts\"",
     "prisma:generate": "prisma generate",
     "db:push:dev": "prisma db push",
     "seed:dev": "tsx scripts/seed-dev.ts",

@@ -63,6 +63,22 @@ export function defaultInputDateFor(month: number, year: number) {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
+/** Nilai input "yyyy-mm-dd" untuk `days` hari sebelum hari ini (zona lokal). */
+export function inputDateDaysAgo(days: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** "hari ini" / "kemarin" / "Sab, 10 Okt" untuk nilai input "yyyy-mm-dd" (kosong = hari ini, aturan server). */
+export function inputDateLabel(value: string) {
+  if (!value || value === todayInputValue()) return "hari ini";
+  if (value === inputDateDaysAgo(1)) return "kemarin";
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short" });
+}
+
 /** ISO → nilai <input type="date"> dalam zona waktu lokal. */
 export function dateInputValue(iso: string) {
   const d = new Date(iso);
