@@ -31,6 +31,8 @@ export interface VillagerTarget {
   /** aksi apa yang membawa penduduk ke sana (untuk animasi saat tiba). */
   kind: "save" | "spend" | "idle";
   nonce: number;
+  /** arah hadap saat tiba (rotation-y); kosong = menghadap bangunan di utara (π) */
+  yaw?: number;
 }
 
 export interface TimePreset {

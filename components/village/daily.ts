@@ -1,8 +1,9 @@
 import { ACTIVITY_WINDOW_DAYS, wibWeekStart, type InsightView } from "@/lib/game";
+import { NO_LIMITS, parsePlaceLimits, type PlaceLimits } from "@/lib/place-limits";
 
 /**
  * Data loop harian yang sengaja TIDAK disimpan di database (repo ini tidak punya migrasi):
- * hari "nol pengeluaran", surat yang sudah dibuka, dan warga/level yang sudah dirayakan.
+ * hari "nol pengeluaran", surat yang sudah dibuka, warga/level yang sudah dirayakan, dan batas jajan per tempat.
  * Disimpan per user di browser; kalau storage diblokir, cukup diingat selama sesi.
  */
 
@@ -83,4 +84,21 @@ export function readLetter(owner: string): string | null {
 
 export function writeLetter(owner: string, key: string) {
   write(letterReadKey(owner), key);
+}
+
+// ── Batas jajan per tempat ───────────────────────────────────────────────────
+export const PLACE_LIMITS_PREFIX = "tepira-village-placelimits:v1:";
+
+export function readPlaceLimits(owner: string): PlaceLimits {
+  return read(PLACE_LIMITS_PREFIX + owner, parsePlaceLimits) ?? NO_LIMITS;
+}
+
+/**
+ * Simpan apa adanya, termasuk objek kosong. Jangan pernah removeItem: read() akan jatuh ke
+ * ingatan sesi tab ini dan memunculkan lagi batas yang sudah dihapus.
+ */
+export function writePlaceLimits(owner: string, limits: PlaceLimits): PlaceLimits {
+  const kept = parsePlaceLimits(limits);
+  write(PLACE_LIMITS_PREFIX + owner, kept);
+  return kept;
 }

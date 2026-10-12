@@ -13,6 +13,9 @@ import {
   type GoalPace
 } from "@/lib/game";
 import { formatCompact } from "@/lib/format";
+import { LIMIT_EMOJI } from "@/lib/place-limits";
+import { categoryIcon } from "@/lib/places";
+import { useKiosks } from "../usePlaces";
 import { HALL, LAMP_POSTS, MAILBOX, UNLOCK_SPOTS, WARUNG, goalPalette, goalPlot, walletSpot } from "../layout";
 import { useMoneyVisible, useVillage } from "../store";
 import { useLetter, useStreak, useVillageXp } from "../useProgress";
@@ -252,6 +255,32 @@ function NextUnlockLabel() {
   );
 }
 
+/** Nama kios tempat langganan; batas jajannya ikut tampil (persentase hanya saat angka terlihat). */
+function KioskLabels() {
+  const kiosks = useKiosks();
+  const moneyVisible = useMoneyVisible();
+  return (
+    <>
+      {kiosks.map((k) => {
+        const level = k.status?.level ?? null;
+        return (
+          <WorldLabel key={k.key} id={`kiosk-${k.key}`} position={[k.spot.x, 2.35, k.spot.z]}>
+            <div className={`name-pill kiosk-pill ${level ?? ""}`} data-kiosk={k.key}>
+              <span className="name-emoji">{categoryIcon(k.topCategory)}</span>
+              <span className="kiosk-name">{k.name}</span>
+              <span className="lv">
+                {level && k.status
+                  ? `${LIMIT_EMOJI[level]}${moneyVisible ? ` ${Math.round(k.status.ratio * 100)}%` : ""}`
+                  : `${k.monthVisits}×`}
+              </span>
+            </div>
+          </WorldLabel>
+        );
+      })}
+    </>
+  );
+}
+
 function ToastLabels() {
   const moneyVisible = useMoneyVisible();
   const toasts = useVillage((s) => s.toasts);
@@ -278,6 +307,8 @@ export default function LabelLayer() {
     <div className="label-layer" aria-hidden>
       {showLabels && (
         <>
+          {/* Paling awal supaya label kios yang kecil tertutup kartu warung/goal kalau bertumpuk. */}
+          <KioskLabels />
           <GoalLabels />
           <WalletLabels />
           <WarungLabel />

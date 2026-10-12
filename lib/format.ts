@@ -28,6 +28,16 @@ export function monthLabel(month: number, year: number) {
   return `${MONTHS_ID[month - 1] ?? month} ${year}`;
 }
 
+/** Apakah periode yang dilihat = bulan berjalan (zona lokal). */
+export function isCurrentPeriod(p: { month: number; year: number }, now = new Date()) {
+  return p.month === now.getMonth() + 1 && p.year === now.getFullYear();
+}
+
+/** "bulan ini" untuk bulan berjalan, selain itu "di Oktober". */
+export function periodWord(p: { month: number; year: number }, now = new Date()) {
+  return isCurrentPeriod(p, now) ? "bulan ini" : `di ${MONTHS_ID[p.month - 1] ?? p.month}`;
+}
+
 export function shortDate(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { ContributionView, ExpenseView, GoalPace, GoalView, KnownPlace, WalletView } from "@/lib/game";
 import {
   MAX_VILLAGERS,
@@ -23,11 +23,14 @@ import {
   inputDateDaysAgo,
   inputDateLabel,
   monthLabel,
+  periodWord,
   shortDate,
   timeAgo,
   todayInputValue
 } from "@/lib/format";
 import { parseQuickEntry, type QuickEntry } from "@/lib/quick-entry";
+import { LIMIT_COLOR, LIMIT_WORD, findPlaceLimit, limitStatus, type LimitLevel } from "@/lib/place-limits";
+import { normalizePlaceName, spendByPlaceName } from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
 import { useLetter, useStreak, useVillageXp } from "../useProgress";
 import { Money } from "./Money";
@@ -35,8 +38,11 @@ import { AmountInput, CATEGORY_GROUPS } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
 import JajanView from "./JajanView";
+import { PlaceLimitHint } from "./PlaceLimit";
+import { useLimitViews } from "../usePlaces";
 
 const NO_PLACES: KnownPlace[] = [];
+const NO_EXPENSES: ExpenseView[] = [];
 
 const QUICK_AMOUNTS = [5_000, 10_000, 20_000, 50_000, 100_000, 500_000];
 
@@ -486,6 +492,21 @@ function SpendPanel() {
 
   const places = useVillage((s) => s.snapshot?.places ?? NO_PLACES);
   const [place, setPlace] = useState<PlaceValue>(NO_PLACE);
+  // Batas jajan tempat yang sedang diisi (hanya untuk bulan yang dimuat, seperti sisa budget).
+  const placeLimits = useVillage((s) => s.placeLimits);
+  const placeSpend = useMemo(() => spendByPlaceName(expenses ?? NO_EXPENSES), [expenses]);
+  const placeLimit = sameMonth && place.name.trim() ? findPlaceLimit(placeLimits, place.name) : null;
+  const placeSpent = placeLimit ? (placeSpend.get(normalizePlaceName(place.name))?.total ?? 0) : 0;
+  const placeLevel: LimitLevel | null = placeLimit ? (limitStatus(placeSpent + amount, placeLimit.limit)?.level ?? null) : null;
+  const placeHint = placeLimit && (
+    <PlaceLimitHint
+      name={placeLimit.name}
+      spent={placeSpent}
+      limit={placeLimit.limit}
+      amount={amount}
+      periodWord={periodWord({ month: viewMonth, year: viewYear })}
+    />
+  );
 
   // ⚡ Catat cepat: kalimat ("bakso 15rb gopay") langsung mengisi form di bawahnya.
   const moneyVisible = useMoneyVisible();
@@ -610,8 +631,10 @@ function SpendPanel() {
                 date={date}
                 source={source}
                 place={place}
+                limitLevel={placeLevel}
               />
             )}
+            {parsed?.place && placeHint}
             {quickHint && <p className="cat-hint warn">{quickHint}</p>}
             {!quick && <small className="muted">Ketik seperti chat lalu Enter. Isian di bawah ikut terisi dan masih bisa diubah.</small>}
           </div>
@@ -666,6 +689,7 @@ function SpendPanel() {
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Makan siang" />
         </label>
         <PlacePicker value={place} onChange={pickPlace} places={places} />
+        {!parsed?.place && placeHint}
         <button className="primary spend" type="submit" data-tour="spend-submit" disabled={loading || amount <= 0 || !walletId}>
           💸 Catat {amount > 0 ? formatRupiah(amount) : ""}
         </button>
@@ -683,7 +707,8 @@ function QuickPreview({
   wallet,
   date,
   source,
-  place
+  place,
+  limitLevel = null
 }: {
   parsed: QuickEntry;
   amount: number;
@@ -692,7 +717,10 @@ function QuickPreview({
   date: string;
   source: "gaji" | "bonus";
   place: PlaceValue;
+  /** level batas jajan tempat ini kalau nominal yang diketik ikut dihitung */
+  limitLevel?: LimitLevel | null;
 }) {
+  const limitClass = limitLevel === "warn" || limitLevel === "over" ? limitLevel : "";
   return (
     <div className="quick-preview" id="quick-preview" aria-live="polite">
       <span className={`qchip ${parsed.amount ? "found" : "missing"}`}>{parsed.amount ? formatRupiah(amount) : "nominal?"}</span>
@@ -704,9 +732,10 @@ function QuickPreview({
       <span className={`qchip ${parsed.daysAgo !== null ? "found" : ""}`}>{inputDateLabel(date)}</span>
       {source === "bonus" && <span className={`qchip ${parsed.source ? "found" : ""}`}>dari bonus</span>}
       {place.name && (
-        <span className={`qchip ${parsed.place ? "found" : ""}`}>
+        <span className={`qchip ${parsed.place ? "found" : ""} ${limitClass}`}>
           📍 {place.name}
           {place.lat === null ? " · tanpa titik" : ""}
+          {limitClass ? ` · ${LIMIT_WORD[limitClass]}` : ""}
         </span>
       )}
       {parsed.assumedThousands && <small className="muted">angka kecil dianggap ribuan</small>}
@@ -1078,6 +1107,9 @@ function LogPanel() {
 function MonthPanel() {
   const snapshot = useVillage((s) => s.snapshot);
   const setPanel = useVillage((s) => s.setPanel);
+  const openJajan = useVillage((s) => s.openJajan);
+  const limitViews = useLimitViews();
+  const moneyVisible = useMoneyVisible();
   if (!snapshot) return null;
   const { summary } = snapshot;
   const h = summary.health;
@@ -1131,6 +1163,27 @@ function MonthPanel() {
             <div className="bar thin"><div style={{ width: `${Math.round((amount / maxCat) * 100)}%`, background: "#f0a06a" }} /></div>
           </div>
         ))}
+      </section>
+      <section>
+        <h3>🎯 Batas jajan per tempat</h3>
+        {limitViews.size === 0 && (
+          <p className="muted small">Belum ada batas. Pilih tempat di 🗺️ Peta jajan (atau klik kiosnya di pulau), lalu 🎯 Atur batas jajan.</p>
+        )}
+        {[...limitViews.values()]
+          .sort((a, b) => b.ratio - a.ratio)
+          .map((l) => (
+            <button key={l.name} className={`cat-row limit-row ${l.level}`} onClick={() => openJajan(l.name)} title="Lihat di peta jajan">
+              <div className="cat-head">
+                <span>{l.name} <small className={`cat-hint ${l.level}`}>{LIMIT_WORD[l.level]}</small></span>
+                <b><Money value={l.spent} /> / <Money value={l.limit} /></b>
+              </div>
+              {moneyVisible && (
+                <div className="bar thin">
+                  <div style={{ width: `${Math.min(100, Math.round(l.ratio * 100))}%`, background: LIMIT_COLOR[l.level] }} />
+                </div>
+              )}
+            </button>
+          ))}
       </section>
     </>
   );
