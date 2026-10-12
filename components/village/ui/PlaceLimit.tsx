@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LIMIT_EMOJI, LIMIT_WORD, findPlaceLimit, limitStatus } from "@/lib/place-limits";
+import { formatRupiah } from "@/lib/format";
+import { LIMIT_EMOJI, LIMIT_WORD, MAX_LIMIT, findPlaceLimit, limitStatus } from "@/lib/place-limits";
 import { useVillage } from "../store";
 import { AmountInput } from "./inputs";
 import { Money } from "./Money";
@@ -29,12 +30,14 @@ export function PlaceLimitEditor({ name }: { name: string }) {
     setPlaceLimit(name, value);
     setEditing(false);
   };
+  const tooBig = amount > MAX_LIMIT;
+  const valid = amount > 0 && !tooBig;
   return (
     <form
       className="add-form deadline-form limit-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (amount > 0) save(amount);
+        if (valid) save(amount);
       }}
       onKeyDown={(e) => {
         // Esc menutup isian ini saja, bukan seluruh peta.
@@ -49,8 +52,9 @@ export function PlaceLimitEditor({ name }: { name: string }) {
         Batas jajan per bulan
         <AmountInput value={amount} onChange={setAmount} placeholder="150.000" ariaLabel="Batas jajan per bulan" autoFocus />
       </label>
+      {tooBig && <small className="cat-hint over">Maksimal {formatRupiah(MAX_LIMIT)}.</small>}
       <div className="confirm-row">
-        <button className="pill on" type="submit" disabled={!(amount > 0)}>
+        <button className="pill on" type="submit" disabled={!valid}>
           💾 Simpan
         </button>
         {current && (

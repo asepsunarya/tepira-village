@@ -285,7 +285,10 @@ export default function JajanMap({
         } else if (g.members.length > 1) {
           // Masih menumpuk di zoom terdekat (mis. satu gedung): tampilkan daftarnya.
           latest.current.onSelect(null);
-          openPopup(map, popup.current, g.members, null, hide, lim, () => latest.current.onSelect(null));
+          // Nilai terbaru, bukan salinan saat penanda digambar (batas bisa diubah tanpa mengubah levelnya).
+          const now = latest.current;
+          const fresh = g.members.map((m) => now.spots.find((s) => s.key === m.key) ?? m);
+          openPopup(map, popup.current, fresh, null, now.hideMoney, now.limits, () => latest.current.onSelect(null));
         } else {
           latest.current.onSelect(g.lead.key);
         }

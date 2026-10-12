@@ -1173,14 +1173,14 @@ function MonthPanel() {
           .sort((a, b) => b.ratio - a.ratio)
           .map((l) => (
             <button key={l.name} className={`cat-row limit-row ${l.level}`} onClick={() => openJajan(l.name)} title="Lihat di peta jajan">
-              <div className="cat-head">
+              <span className="cat-head">
                 <span>{l.name} <small className={`cat-hint ${l.level}`}>{LIMIT_WORD[l.level]}</small></span>
                 <b><Money value={l.spent} /> / <Money value={l.limit} /></b>
-              </div>
+              </span>
               {moneyVisible && (
-                <div className="bar thin">
-                  <div style={{ width: `${Math.min(100, Math.round(l.ratio * 100))}%`, background: LIMIT_COLOR[l.level] }} />
-                </div>
+                <span className="bar thin">
+                  <span style={{ width: `${Math.min(100, Math.round(l.ratio * 100))}%`, background: LIMIT_COLOR[l.level] }} />
+                </span>
               )}
             </button>
           ))}

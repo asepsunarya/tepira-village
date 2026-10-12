@@ -279,7 +279,8 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
                 </>
               )}
               {!selectedSpot && !selectedKnown && <small className="muted">Tempat ini belum punya titik di peta.</small>}
-              <PlaceLimitEditor name={selectedName} />
+              {/* key per tempat: isian yang sedang terbuka tidak terbawa ke tempat lain */}
+              <PlaceLimitEditor key={selectedNorm} name={selectedName} />
             </section>
           )}
 

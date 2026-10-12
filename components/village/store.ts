@@ -97,6 +97,8 @@ interface State {
   placeLimits: PlaceLimits;
   /** Tempat yang disorot saat peta jajan dibuka (kunci titik `n:<nama>`), mis. dari klik kios. */
   jajanFocus: string | null;
+  /** Kios yang sedang disorot kursor (labelnya melebar menampilkan nama). */
+  hoverKiosk: string | null;
 
   hydrate: (snapshot: Snapshot) => void;
   setPanel: (panel: Panel) => void;
@@ -138,6 +140,7 @@ interface State {
   reloadPlaceLimits: () => void;
   /** Buka peta jajan, opsional langsung menyorot satu tempat. */
   openJajan: (placeName?: string | null) => void;
+  setHoverKiosk: (key: string | null) => void;
 
   tour: TourState;
   /** Setoran & pengeluaran yang berhasil sejak halaman dibuka (untuk tur). */
@@ -180,7 +183,18 @@ export const useVillage = create<State>()(
       };
       const apply = (result: ActionResult) => {
         if (result.ok) {
-          set({ snapshot: result.snapshot, loading: false, error: null });
+          const prev = get().snapshot;
+          // Akun berganti di tab lain lalu tab ini memuat ulang data: ambil data browser milik akun baru.
+          const owner = tourOwner(result.snapshot);
+          const switched = prev !== null && !isDemoSnapshot(prev) && tourOwner(prev) !== owner;
+          set({
+            snapshot: result.snapshot,
+            loading: false,
+            error: null,
+            ...(switched
+              ? { placeLimits: readPlaceLimits(owner), noSpendDays: readNoSpend(owner), letterRead: readLetter(owner) }
+              : {})
+          });
           celebrateSoon();
           return true;
         }
@@ -257,6 +271,7 @@ export const useVillage = create<State>()(
         letterRead: null,
         placeLimits: NO_LIMITS,
         jajanFocus: null,
+        hoverKiosk: null,
         tour: IDLE_TOUR,
         tourHits: NO_HITS,
 
@@ -276,13 +291,22 @@ export const useVillage = create<State>()(
         },
         // Fokus tempat hanya berlaku untuk satu kali buka lewat openJajan.
         setPanel: (panel) => set({ panel, jajanFocus: null }),
-        openJajan: (placeName) => set({ panel: "jajan", jajanFocus: placeName ? spotKeyFor(placeName) : null }),
+        openJajan: (placeName) =>
+          set({ panel: "jajan", jajanFocus: placeName ? spotKeyFor(placeName) : null, hoverKiosk: null }),
+        setHoverKiosk: (hoverKiosk) => set({ hoverKiosk }),
         setPlaceLimit: (name, limit) => {
           const s = get().snapshot;
           if (!s || isDemoSnapshot(s) || !normalizePlaceName(name)) return;
-          const next = withPlaceLimit(get().placeLimits, name, limit);
-          if (next === get().placeLimits) return;
-          set({ placeLimits: writePlaceLimits(tourOwner(s), next) });
+          // Mulai dari isi storage milik pemilik yang ditulis (bukan state di memori yang bisa saja
+          // milik akun sebelumnya di tab yang sama).
+          const owner = tourOwner(s);
+          const base = readPlaceLimits(owner);
+          const next = withPlaceLimit(base, name, limit);
+          if (next === base) {
+            set({ placeLimits: base });
+            return;
+          }
+          set({ placeLimits: writePlaceLimits(owner, next) });
           // Tanpa nominal: pesan ini tampil juga saat angka disembunyikan.
           notify(limit ? `🎯 Batas jajan ${name.trim()} disimpan.` : `Batas jajan ${name.trim()} dihapus.`);
         },

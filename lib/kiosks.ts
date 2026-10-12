@@ -29,13 +29,14 @@ export const kioskBusyness = (visits: number): Busyness => (visits >= 6 ? 3 : vi
 
 /**
  * Slot tiap kios dari hash kuncinya (bukan peringkat), supaya kios tidak pindah tempat saat
- * urutan berubah. Bentrok: geser ke slot bebas berikutnya. Diproses urut kunci supaya hasilnya
- * sama apa pun urutan masukannya.
+ * urutan berubah. Bentrok: geser ke slot bebas berikutnya. `keys` diproses sesuai urutannya
+ * (prioritas dari pickKiosks), jadi tempat yang paling sering didatangi tetap di slot hash-nya dan
+ * tempat baru yang mengalah kalau bentrok.
  */
 export function assignKioskSlots(keys: readonly string[], slotCount: number, blocked: readonly number[] = []) {
   const taken = new Set(blocked.filter((b) => b >= 0 && b < slotCount));
   const out = new Map<string, number>();
-  for (const key of [...new Set(keys)].sort()) {
+  for (const key of new Set(keys)) {
     if (taken.size >= slotCount) break;
     let slot = fnv1a(key) % slotCount;
     while (taken.has(slot)) slot = (slot + 1) % slotCount;

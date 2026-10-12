@@ -105,13 +105,15 @@ export const BALLOON = { x: -2, y: 13, z: 2, r: 6 };
  * semuanya 2,2 dari garis tengah jalan dan bebas dari kavling goal, peti dompet, lampu, & bangunan level.
  * Urutan = nomor slot. Dekorasi selalu menjauhi kedelapan titik ini (Decor.tsx).
  */
-export const KIOSK_SPOTS: { x: number; z: number; rot: number }[] = [
+export const KIOSK_SPOTS: { x: number; z: number; rot: number; label?: "below" }[] = [
   { x: 5.44, z: 1.76, rot: -0.46 },
-  { x: 7.87, z: 3.11, rot: -0.55 },
+  // Label "below": diukur di sudut pandang awal dengan delapan kios, label slot ini menumpuk
+  // dengan tetangganya kalau di atas kios.
+  { x: 7.87, z: 3.11, rot: -0.55, label: "below" },
   { x: 10.69, z: 1.93, rot: 1.8 },
   { x: 9.85, z: -0.39, rot: 2.05 },
   { x: 8.44, z: -2.51, rot: 2.25 },
-  { x: -7.43, z: -5.42, rot: 0.52 },
+  { x: -7.43, z: -5.42, rot: 0.52, label: "below" },
   { x: -9.56, z: -3.26, rot: 1.01 },
   { x: -11.24, z: 1.48, rot: 1.5 }
 ];
@@ -120,7 +122,7 @@ export const KIOSK_SPOTS: { x: number; z: number; rot: number }[] = [
 export const kioskBlockedSlots = (goalCount: number) => (goalCount >= 14 ? [7] : []);
 
 /** Titik berdiri di depan kios (di jalan setapak) dan arah hadap ke kios. */
-export function kioskFront(spot: { x: number; z: number; rot: number }, distance = 1.9) {
+export function kioskFront(spot: { x: number; z: number; rot: number }, distance = 2.35) {
   return { x: spot.x + distance * Math.sin(spot.rot), z: spot.z + distance * Math.cos(spot.rot), yaw: spot.rot + Math.PI };
 }
 

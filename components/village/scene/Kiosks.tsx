@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { expenseCategories } from "@/lib/categories";
@@ -19,11 +19,6 @@ const BOARD = "#f7e7c6";
 /** Warna pudar untuk kios yang lewat batas. */
 const FADED = "#b9ae9f";
 
-const pointer = {
-  onPointerOver: () => (document.body.style.cursor = "pointer"),
-  onPointerOut: () => (document.body.style.cursor = "")
-};
-
 const CUSTOMER_SPOTS: [number, number][] = [
   [-0.38, 1.15],
   [0.38, 1.15],
@@ -41,16 +36,37 @@ const goodsFor = (category: string | null): Goods =>
 export default function Kiosks({ lit }: { lit: boolean }) {
   const kiosks = useKiosks();
   const openJajan = useVillage((s) => s.openJajan);
+  const setHoverKiosk = useVillage((s) => s.setHoverKiosk);
   return (
     <group>
       {kiosks.map((k) => (
-        <Kiosk key={k.key} kiosk={k} lit={lit} onOpen={() => openJajan(k.name)} />
+        <Kiosk
+          key={k.key}
+          kiosk={k}
+          lit={lit}
+          onOpen={() => openJajan(k.name)}
+          onHover={(on) => {
+            document.body.style.cursor = on ? "pointer" : "";
+            if (on) setHoverKiosk(k.key);
+            else if (useVillage.getState().hoverKiosk === k.key) setHoverKiosk(null);
+          }}
+        />
       ))}
     </group>
   );
 }
 
-function Kiosk({ kiosk, lit, onOpen }: { kiosk: PlacedKiosk; lit: boolean; onOpen: () => void }) {
+function Kiosk({
+  kiosk,
+  lit,
+  onOpen,
+  onHover
+}: {
+  kiosk: PlacedKiosk;
+  lit: boolean;
+  onOpen: () => void;
+  onHover: (on: boolean) => void;
+}) {
   const { spot, busy, topCategory, key } = kiosk;
   const level = kiosk.status?.level ?? null;
   const over = level === "over";
@@ -66,6 +82,9 @@ function Kiosk({ kiosk, lit, onOpen }: { kiosk: PlacedKiosk; lit: boolean; onOpe
     return { accent: `#${accent.getHexString()}`, body: `#${body.getHexString()}` };
   }, [topCategory, hash, over]);
 
+  // Posisi awal saja yang diambil dari props; perubahan sesudahnya dijalankan useFrame (kalau props
+  // ikut berubah, r3f langsung menimpa nilainya dan animasinya tidak terlihat).
+  const [initialOver] = useState(over);
   const awning = useRef<THREE.Group>(null);
   const shutter = useRef<THREE.Mesh>(null);
   const flag = useRef<THREE.MeshStandardMaterial>(null);
@@ -104,7 +123,11 @@ function Kiosk({ kiosk, lit, onOpen }: { kiosk: PlacedKiosk; lit: boolean; onOpe
         e.stopPropagation();
         onOpen();
       }}
-      {...pointer}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        onHover(true);
+      }}
+      onPointerOut={() => onHover(false)}
     >
       {/* lantai */}
       <mesh position-y={0.05} receiveShadow>
@@ -170,7 +193,7 @@ function Kiosk({ kiosk, lit, onOpen }: { kiosk: PlacedKiosk; lit: boolean; onOpe
         </mesh>
       ))}
       {/* tenda belang: turun menutup saat lewat batas */}
-      <group ref={awning} position={[0, 1.46, -0.38]} rotation-x={over ? 0.95 : 0.25}>
+      <group ref={awning} position={[0, 1.46, -0.38]} rotation-x={initialOver ? 0.95 : 0.25}>
         {[-0.63, -0.21, 0.21, 0.63].map((x, i) => (
           <mesh key={x} position={[x, 0, 0.5]} castShadow>
             <boxGeometry args={[0.42, 0.05, 1.04]} />
@@ -179,7 +202,7 @@ function Kiosk({ kiosk, lit, onOpen }: { kiosk: PlacedKiosk; lit: boolean; onOpe
         ))}
       </group>
       {/* rana yang turun saat lewat batas */}
-      <mesh ref={shutter} position={[0, over ? 0.52 : 1.5, 0.56]} visible={over}>
+      <mesh ref={shutter} position={[0, initialOver ? 0.52 : 1.5, 0.56]} visible={initialOver}>
         <boxGeometry args={[1.5, 0.62, 0.05]} />
         <meshStandardMaterial color="#d8cfc4" />
       </mesh>

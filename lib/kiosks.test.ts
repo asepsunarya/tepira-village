@@ -41,12 +41,16 @@ test("kioskBusyness: sepi, 1–2, 3–5, 6+", () => {
   assert.deepEqual([0, 1, 2, 3, 5, 6, 20].map(kioskBusyness), [0, 1, 1, 2, 2, 3, 3]);
 });
 
-test("assignKioskSlots: stabil, unik, melewati slot terblokir", () => {
+test("assignKioskSlots: stabil, unik, melewati slot terblokir, prioritas menang saat bentrok", () => {
   const keys = ["kopi toko djawa", "bakso pak kumis", "warkop bang ijo", "mie gacoan dago"];
   const a = assignKioskSlots(keys, 8);
-  const b = assignKioskSlots([...keys].reverse(), 8);
-  assert.deepEqual([...a.entries()].sort(), [...b.entries()].sort());
+  assert.deepEqual([...assignKioskSlots(keys, 8).entries()], [...a.entries()]);
   assert.equal(new Set(a.values()).size, keys.length);
+  // yang di depan (prioritas lebih tinggi) selalu dapat slot hash-nya; tempat baru di belakang tidak menggeser
+  const crowded = [...keys, "seblak teh imas", "pasar simpang dago", "gramedia merdeka", "indomaret dago"];
+  const full = assignKioskSlots(crowded, 8);
+  assert.equal(full.get(keys[0]), a.get(keys[0]));
+  assert.equal(new Set(full.values()).size, 8);
   const blocked = assignKioskSlots(keys, 8, [...a.values()].slice(0, 1));
   assert.ok(![...blocked.values()].includes([...a.values()][0]));
   // menambah tempat baru tidak memindahkan kios lama yang slot hash-nya tidak bentrok

@@ -207,6 +207,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .limit-row.warn { border-color: #f6dca0; }
 .limit-row.over { border-color: #ffd0d0; }
 .limit-row .cat-head small { margin-left: 4px; font-size: 10px; }
+.limit-row .bar { display: block; }
 
 .score-card { display: flex; gap: 12px; align-items: center; background: #fff; border-radius: 16px; padding: 12px; border: 2px solid #f6ebf0; }
 .score-card b { font-size: 15px; font-weight: 900; }
@@ -434,7 +435,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .streak-pill .lv { background: #fff0c9; color: #a87a12; }
 /* kios tempat langganan: label kecil supaya tidak berebut tempat dengan kartu warung/goal */
 .kiosk-pill { font-size: 10px; padding: 2px 8px 2px 6px; gap: 4px; }
-.kiosk-pill .kiosk-name { max-width: 96px; overflow: hidden; text-overflow: ellipsis; }
+.kiosk-pill .kiosk-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.world-label.is-hover { z-index: 2; }
+.kiosk-pill.open { box-shadow: 0 0 0 2px var(--pink), 0 3px 10px rgba(120, 60, 100, 0.25); }
 .kiosk-pill.warn { box-shadow: 0 3px 10px rgba(243, 195, 91, 0.45), inset 0 0 0 1.5px #f6dca0; }
 .kiosk-pill.warn .lv { color: #a87a12; }
 .kiosk-pill.over { box-shadow: 0 3px 10px rgba(232, 109, 109, 0.35), inset 0 0 0 1.5px #ffc9c9; }

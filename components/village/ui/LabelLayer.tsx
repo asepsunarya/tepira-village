@@ -25,16 +25,18 @@ function WorldLabel({
   id,
   position,
   anchor = "above",
+  className = "",
   children
 }: {
   id: string;
   position: [number, number, number];
   anchor?: Anchor;
+  className?: string;
   children: ReactNode;
 }) {
   const ref = useWorldLabel(id, position, anchor);
   return (
-    <div ref={ref} className="world-label" style={{ display: "none" }}>
+    <div ref={ref} className={`world-label ${className}`} style={{ display: "none" }}>
       {children}
     </div>
   );
@@ -255,19 +257,30 @@ function NextUnlockLabel() {
   );
 }
 
-/** Nama kios tempat langganan; batas jajannya ikut tampil (persentase hanya saat angka terlihat). */
+/**
+ * Label kios: ringkas (ikon + kunjungan atau status batas) supaya delapan kios di jalan jajan tidak
+ * saling menumpuk; nama tempat muncul saat kiosnya disorot kursor. Persentase hanya saat angka terlihat.
+ */
 function KioskLabels() {
   const kiosks = useKiosks();
   const moneyVisible = useMoneyVisible();
+  const hover = useVillage((s) => s.hoverKiosk);
   return (
     <>
       {kiosks.map((k) => {
         const level = k.status?.level ?? null;
+        const open = hover === k.key;
         return (
-          <WorldLabel key={k.key} id={`kiosk-${k.key}`} position={[k.spot.x, 2.35, k.spot.z]}>
-            <div className={`name-pill kiosk-pill ${level ?? ""}`} data-kiosk={k.key}>
+          <WorldLabel
+            key={k.key}
+            id={`kiosk-${k.key}`}
+            position={[k.spot.x, k.spot.label === "below" ? 0.1 : 2.35, k.spot.z]}
+            anchor={k.spot.label === "below" ? "below" : "above"}
+            className={open ? "is-hover" : ""}
+          >
+            <div className={`name-pill kiosk-pill ${level ?? ""} ${open ? "open" : ""}`} data-kiosk={k.key} data-slot={k.slot}>
               <span className="name-emoji">{categoryIcon(k.topCategory)}</span>
-              <span className="kiosk-name">{k.name}</span>
+              {open && <span className="kiosk-name">{k.name}</span>}
               <span className="lv">
                 {level && k.status
                   ? `${LIMIT_EMOJI[level]}${moneyVisible ? ` ${Math.round(k.status.ratio * 100)}%` : ""}`
