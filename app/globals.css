@@ -62,9 +62,10 @@ a { color: inherit; text-decoration: none; }
 .stat-tile.spend { border-color: #ffd0d0; }
 .stat-tile.spend b { color: #c23b3b; }
 /* kotak yang membuka aliran uang */
-button.stat-tile.link { text-align: left; transition: border-color 0.15s, transform 0.15s; }
+button.stat-tile.link { position: relative; text-align: left; transition: border-color 0.15s, transform 0.15s; }
 button.stat-tile.link:hover { border-color: #a8dcf3; transform: translateY(-1px); }
-button.stat-tile.link small::after { content: " 🌊"; }
+button.stat-tile.link b { padding-right: 18px; }
+button.stat-tile.link::after { content: "🌊"; position: absolute; right: 8px; bottom: 7px; font-size: 12px; opacity: 0.75; }
 .stat-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .stat { font-size: 12px; font-weight: 700; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .stat b { color: var(--ink); font-weight: 900; font-size: 13px; }

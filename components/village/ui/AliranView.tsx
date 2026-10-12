@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatCompact, monthLabel, periodWord as periodWordFor } from "@/lib/format";
 import {
   LABEL_W,
@@ -127,6 +127,8 @@ export default function AliranView({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [stageRef, stageWidth] = useWidth<HTMLDivElement>();
   const closeRef = useRef<HTMLButtonElement>(null);
+  // id gradien SVG: key berisi spasi & "/" ("Listrik / Air / Kos") tidak sah di url(#…), jadi pakai indeks.
+  const gid = useId().replace(/:/g, "");
 
   // Fokus keyboard pindah ke dalam tampilan (HUD di belakangnya dibuat inert).
   useEffect(() => {
@@ -194,21 +196,21 @@ export default function AliranView({ onClose }: { onClose: () => void }) {
             aria-label={`Aliran uang ${monthLabel(month, year)}`}
           >
             <defs>
-              {layout.links.map((l) => (
-                <linearGradient key={l.key} id={`av-g-${l.key}`} x1="0" x2="1" y1="0" y2="0">
+              {layout.links.map((l, i) => (
+                <linearGradient key={l.key} id={`${gid}-g${i}`} x1="0" x2="1" y1="0" y2="0">
                   <stop offset="0%" stopColor={l.to === "pool" ? l.color : WATER} />
                   <stop offset="100%" stopColor={l.to === "pool" ? WATER : l.color} />
                 </linearGradient>
               ))}
-              <linearGradient id="av-pool" x1="0" x2="0" y1="0" y2="1">
+              <linearGradient id={`${gid}-pool`} x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stopColor="#b5e6fb" />
                 <stop offset="100%" stopColor="#5cb8e6" />
               </linearGradient>
             </defs>
 
-            {layout.links.map((l) => (
+            {layout.links.map((l, i) => (
               <g key={l.key} className={`av-link ${isDim(l.key, l.from, l.to) ? "dim" : ""}`}>
-                <path d={l.d} fill={`url(#av-g-${l.key})`} />
+                <path d={l.d} fill={`url(#${gid}-g${i})`} />
                 <path
                   d={l.center}
                   className="av-current"
@@ -228,7 +230,7 @@ export default function AliranView({ onClose }: { onClose: () => void }) {
                 rx={12}
                 fill="#e9d9b5"
               />
-              <rect x={layout.pool.x} y={layout.pool.y} width={layout.pool.w} height={layout.pool.h} rx={9} fill="url(#av-pool)" />
+              <rect x={layout.pool.x} y={layout.pool.y} width={layout.pool.w} height={layout.pool.h} rx={9} fill={`url(#${gid}-pool)`} />
               <text x={layout.pool.x + layout.pool.w / 2} y={layout.pool.y - 14} textAnchor="middle" className="av-label">
                 💧 Waduk
               </text>
@@ -356,6 +358,10 @@ export default function AliranView({ onClose }: { onClose: () => void }) {
                     {overflowing(picked) ? (
                       <>
                         🌊 Meluap <Amount value={overflowBy(picked)} /> dari jatah <Amount value={picked.budget} />
+                      </>
+                    ) : picked.fromSalary === picked.budget ? (
+                      <>
+                        Jatah <Amount value={picked.budget} /> pas terpakai semua.
                       </>
                     ) : (
                       <>
