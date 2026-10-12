@@ -29,6 +29,7 @@ import {
   todayInputValue
 } from "@/lib/format";
 import { parseQuickEntry, type QuickEntry } from "@/lib/quick-entry";
+import { normalizeSpokenAmounts } from "@/lib/spoken-amount";
 import { LIMIT_COLOR, LIMIT_WORD, findPlaceLimit, limitStatus, type LimitLevel } from "@/lib/place-limits";
 import { normalizePlaceName, spendByPlaceName } from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
@@ -41,6 +42,8 @@ import JajanView from "./JajanView";
 import AliranView from "./AliranView";
 import { PlaceLimitHint } from "./PlaceLimit";
 import { useLimitViews } from "../usePlaces";
+import { useSpeechSupported } from "../speech";
+import VoiceButton from "./VoiceButton";
 
 const NO_PLACES: KnownPlace[] = [];
 const NO_EXPENSES: ExpenseView[] = [];
@@ -566,6 +569,18 @@ function SpendPanel() {
     base.current.date = v;
   };
 
+  // 🎤 Catat lewat suara: ucapan dinormalkan ("lima belas ribu" → "Rp15.000") lalu diperlakukan seperti
+  // kalimat yang diketik. Tidak pernah menyimpan sendiri: pratinjau dicek dulu, lalu Enter / 💸 Catat.
+  const quickInput = useRef<HTMLInputElement>(null);
+  /** teks yang sudah diketik sebelum menekan 🎤; ucapan ditambahkan di belakangnya */
+  const voicePrefix = useRef("");
+  const speechOk = useSpeechSupported();
+  const hearQuick = (spoken: string, final: boolean) => {
+    typeQuick([voicePrefix.current, normalizeSpokenAmounts(spoken)].filter(Boolean).join(" "));
+    // Desktop: fokus balik ke kolom supaya Enter langsung menyimpan. Di HP jangan (keyboard muncul).
+    if (final && window.matchMedia("(pointer: fine)").matches) quickInput.current?.focus();
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (amount <= 0 || !walletId) return;
@@ -603,9 +618,11 @@ function SpendPanel() {
         {/* Ikut mode sembunyikan angka: nominal yang diketik ikut terlihat, jadi kolomnya ditutup juga. */}
         {moneyVisible && (
           <div className="quick-entry">
-            <label>
-              ⚡ Catat cepat
+            <label htmlFor="quick-input">⚡ Catat cepat</label>
+            <div className="quick-row">
               <input
+                id="quick-input"
+                ref={quickInput}
                 value={quick}
                 onChange={(e) => typeQuick(e.target.value)}
                 onKeyDown={(e) => {
@@ -622,7 +639,16 @@ function SpendPanel() {
                 enterKeyHint="send"
                 aria-describedby="quick-preview"
               />
-            </label>
+              <VoiceButton
+                disabled={loading}
+                onStart={() => {
+                  voicePrefix.current = quick.trim();
+                  setQuickHint(null);
+                }}
+                onText={hearQuick}
+                onError={setQuickHint}
+              />
+            </div>
             {parsed && (
               <QuickPreview
                 parsed={parsed}
@@ -637,7 +663,13 @@ function SpendPanel() {
             )}
             {parsed?.place && placeHint}
             {quickHint && <p className="cat-hint warn">{quickHint}</p>}
-            {!quick && <small className="muted">Ketik seperti chat lalu Enter. Isian di bawah ikut terisi dan masih bisa diubah.</small>}
+            {!quick && (
+              <small className="muted">
+                Ketik seperti chat lalu Enter
+                {speechOk ? <>, atau tekan 🎤 lalu ucapkan misalnya &ldquo;bakso lima belas ribu pakai gopay&rdquo;</> : null}. Isian di
+                bawah ikut terisi dan masih bisa diubah.
+              </small>
+            )}
           </div>
         )}
         {sameMonth && summary && summary.budget.status !== "NO_BUDGET" && (

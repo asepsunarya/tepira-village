@@ -625,6 +625,16 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
 .qchip.warn { background: #fff0c9; border-color: #f6dca0; color: #a87a12; }
 .qchip.over { background: #ffdede; border-color: #ffc9c9; color: #c23b3b; }
 .quick-preview small { font-size: 10px; }
+/* 🎤 catat lewat suara di samping kolom catat cepat */
+.quick-row { display: flex; gap: 6px; align-items: center; }
+.quick-row input { flex: 1; min-width: 0; }
+.quick-row .icon-btn.mic { width: 40px; height: 40px; font-size: 18px; background: #fff; border: 2px solid #f6dca0; border-radius: 12px; }
+.quick-row .icon-btn.mic:hover { background: #fff3d6; }
+.quick-row .icon-btn.mic.on { background: #ffdede; border-color: #ffc9c9; animation: micPulse 1.2s ease-out infinite; }
+@keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(243, 195, 91, 0.6); } 100% { box-shadow: 0 0 0 10px rgba(243, 195, 91, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .quick-row .icon-btn.mic.on { animation: none; }
+}
 
 /* ---------- tutorial ---------- */
 .hud-brand .tour-replay { margin-left: auto; }

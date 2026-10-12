@@ -110,6 +110,9 @@ function walletMatchers(wallets: readonly QuickWallet[]) {
   };
   for (const w of wallets) {
     add(w.id, w.name, 0);
+    // Suara menulis "GoPay" sebagai "go pay", "ShopeePay" → "shopee pay".
+    const spaced = w.name.replace(/(\p{Ll})(\p{Lu})/gu, "$1 $2");
+    if (spaced !== w.name) add(w.id, spaced, 0);
     for (const token of w.name.toLowerCase().split(/[^\p{L}\d]+/u)) {
       if (token.length >= 3 && !NAME_STOPWORDS.has(token)) add(w.id, token, 1);
     }
@@ -128,11 +131,11 @@ function walletMatchers(wallets: readonly QuickWallet[]) {
 }
 
 // ── Nominal ──────────────────────────────────────────────────────────────────
-const UNIT: Record<string, number> = { rb: 1e3, ribu: 1e3, rbu: 1e3, k: 1e3, jt: 1e6, juta: 1e6, perak: 1 };
+const UNIT: Record<string, number> = { rb: 1e3, ribu: 1e3, rbu: 1e3, rebu: 1e3, k: 1e3, jt: 1e6, juta: 1e6, perak: 1 };
 
-// grup: 3 = awalan "rp", 4 = angka, 5 = satuan. "2x" / "im3" tidak terbaca sebagai nominal.
+// grup: 3 = awalan "rp", 4 = angka, 5 = satuan, 6 = akhiran "rupiah". "2x" / "im3" tidak terbaca sebagai nominal.
 const AMOUNT = new RegExp(
-  `(^|${NOT_WORD})((rp\\.?\\s*)?(\\d+(?:[.,]\\d+)*)(?:\\s*(rb|ribu|rbu|k|jt|juta|perak)(?!\\p{L}))?)(?![\\p{L}\\d])`,
+  `(^|${NOT_WORD})((rp\\.?\\s*)?(\\d+(?:[.,]\\d+)*)(?:\\s*(rb|ribu|rbu|rebu|k|jt|juta|perak)(?!\\p{L}))?(?:\\s*(rupiah)(?!\\p{L}))?)(?![\\p{L}\\d])`,
   "gu"
 );
 
@@ -153,7 +156,9 @@ function findAmount(text: string, nameSpan: { start: number; end: number } | nul
   let bare: (Hit & { value: number; assumed: boolean }) | null = null;
   AMOUNT.lastIndex = 0;
   for (let m = AMOUNT.exec(text); m; m = AMOUNT.exec(text)) {
-    const [, , , prefix, digits, unit] = m;
+    const [, , , rp, digits, unit, rupiah] = m;
+    // "Rp15.000" dan "500 rupiah" sama-sama nominal yang jelas (tidak "dianggap ribuan").
+    const prefix = rp || rupiah;
     const start = m.index + m[1].length;
     if (!unit && !prefix && nameSpan && start >= nameSpan.start && start < nameSpan.end) continue;
     const n = toNumber(digits, Boolean(unit) && unit !== "perak");
@@ -182,18 +187,18 @@ const STRONG: Record<ExpenseCategoryKey, string[]> = {
   makan_harian: [
     "makan", "nasi", "nasgor", "bakso", "mie", "mi ayam", "mie ayam", "soto", "sate", "ayam", "bebek", "ikan", "padang",
     "warteg", "gado-gado", "gado", "pecel", "lontong", "ketoprak", "bubur", "roti", "sarapan", "lauk", "sayur", "sayuran",
-    "beras", "telur", "telor", "minyak goreng", "gofood", "grabfood", "shopeefood", "katering", "catering", "rames",
+    "beras", "telur", "telor", "minyak goreng", "gofood", "go food", "grabfood", "grab food", "shopeefood", "shopee food", "katering", "catering", "rames",
     "geprek", "burger", "pizza", "kfc", "mcd", "mekdi", "hokben", "indomie", "galon", "air mineral", "aqua",
     "belanja dapur", "dapur"
   ],
   transport: [
-    "ojek", "ojol", "gojek", "goride", "gocar", "grab", "grabbike", "grabcar", "maxim", "indrive", "bensin", "pertalite",
-    "pertamax", "solar", "bbm", "parkir", "tol", "e-toll", "etoll", "busway", "transjakarta", "krl", "commuter", "mrt",
+    "ojek", "ojol", "gojek", "goride", "go ride", "gocar", "go car", "grab", "grabbike", "grab bike", "grabcar", "grab car", "maxim", "indrive", "bensin", "pertalite",
+    "pertamax", "solar", "bbm", "parkir", "tol", "e-toll", "etoll", "e toll", "busway", "transjakarta", "krl", "commuter", "mrt",
     "lrt", "kereta", "angkot", "bus", "bis", "taksi", "taxi", "bluebird", "travel", "bengkel", "servis motor",
     "service motor", "ganti oli", "tambal ban", "cuci motor", "cuci mobil"
   ],
   pulsa_internet: [
-    "pulsa", "kuota", "paket data", "internet", "wifi", "wi-fi", "indihome", "telkomsel", "tsel", "xl", "axis", "indosat",
+    "pulsa", "kuota", "paket data", "internet", "wifi", "wi-fi", "wi fi", "indihome", "telkomsel", "tsel", "xl", "axis", "indosat",
     "im3", "tri", "smartfren", "by.u", "byu", "biznet", "first media", "myrepublic", "iconnet"
   ],
   listrik_kos: ["listrik", "token", "pln", "pdam", "kos", "kost", "kosan", "sewa", "kontrakan", "ipl", "iuran", "sampah", "gas", "elpiji", "lpg"],
