@@ -12,6 +12,7 @@ import {
   goalPace,
   previewInsight,
   walletEmoji,
+  wibDay,
   wibDayDate,
   xpForLevel
 } from "@/lib/game";
@@ -33,14 +34,17 @@ import { normalizeSpokenAmounts } from "@/lib/spoken-amount";
 import { LIMIT_COLOR, LIMIT_WORD, findPlaceLimit, limitStatus, type LimitLevel } from "@/lib/place-limits";
 import { normalizePlaceName, spendByPlaceName } from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
-import { useLetter, useStreak, useVillageXp } from "../useProgress";
+import { useLetter, useStreak, useVillageXp, useWibToday } from "../useProgress";
 import { Money } from "./Money";
-import { AmountInput, CATEGORY_GROUPS } from "./inputs";
+import { AmountInput, CategorySelect } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
 import JajanView from "./JajanView";
 import AliranView from "./AliranView";
 import JournalPanel from "./JournalPanel";
+import RecurringPanel, { GoalRecurring, MailboxBills, MonthRecurring } from "./RecurringPanel";
+import { dayInput, firstOnOrAfter, ruleStatus } from "@/lib/recurring";
+import { wibDateParts } from "@/lib/season";
 import { PlaceLimitHint } from "./PlaceLimit";
 import { useLimitViews } from "../usePlaces";
 import { useVoiceInput } from "../speech";
@@ -50,23 +54,6 @@ const NO_PLACES: KnownPlace[] = [];
 const NO_EXPENSES: ExpenseView[] = [];
 
 const QUICK_AMOUNTS = [5_000, 10_000, 20_000, 50_000, 100_000, 500_000];
-
-function CategorySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  // Kategori lama yang tidak ada di daftar (mis. diketik di tepira) tetap bisa dipilih.
-  const known = expenseCategories.some((c) => c.label === value);
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
-      {!known && value && <option value={value}>{value}</option>}
-      {Object.entries(CATEGORY_GROUPS).map(([group, items]) => (
-        <optgroup key={group} label={group}>
-          {items.map((c) => (
-            <option key={c.key} value={c.label}>{c.label}</option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-  );
-}
 
 function PanelShell({
   title,
@@ -158,6 +145,7 @@ function GoalDetail({ goal }: { goal: GoalView }) {
       {goal.progress < 1 && (
         <button className="primary" onClick={() => setPanel("save")}>🪙 Nabung ke goal ini</button>
       )}
+      {goal.progress < 1 && <GoalRecurring goalId={goal.id} perWeek={goalPace(goal).perWeek || undefined} />}
 
       <section>
         <h3>Riwayat setoran</h3>
@@ -394,6 +382,8 @@ function SavePanel() {
   }, [goalId, active]);
   const goal = goals.find((g) => g.id === goalId);
   const pace = goal ? goalPace(goal) : null;
+  const openRecurring = useVillage((s) => s.openRecurring);
+  const recurringOn = useVillage((s) => s.snapshot?.recurring.available ?? false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -438,6 +428,15 @@ function SavePanel() {
           <button type="button" className="pill" onClick={() => setAmount(pace.perWeek)}>
             Isi
           </button>
+          {recurringOn && (
+            <button
+              type="button"
+              className="pill"
+              onClick={() => openRecurring({ kind: "saving", goalId, amount: pace.perWeek, frequency: "weekly", every: 1 })}
+            >
+              🔁 Rutinkan
+            </button>
+          )}
         </p>
       )}
       <label>
@@ -458,6 +457,11 @@ function SavePanel() {
       <button className="primary" type="submit" data-tour="save-submit" disabled={loading || amount <= 0 || !goalId}>
         🪙 Setor {amount > 0 ? formatRupiah(amount) : ""}
       </button>
+      {recurringOn && (
+        <button type="button" className="link-btn" onClick={() => openRecurring({ kind: "saving", goalId, ...(amount > 0 ? { amount } : {}) })}>
+          🔁 Jadikan setoran rutin (tiap minggu / bulan)
+        </button>
+      )}
     </form>
   );
 }
@@ -626,6 +630,7 @@ function SpendPanel() {
 
   return (
     <>
+      <RecurringChips />
       <form className="add-form" onSubmit={submit} data-tour="spend-form">
         {/* Ikut mode sembunyikan angka: nominal yang diketik ikut terlihat, jadi kolomnya ditutup juga. */}
         {moneyVisible && (
@@ -787,6 +792,25 @@ function QuickPreview({
   );
 }
 
+/** Pintu ke 🔁 tagihan rutin & 📮 tagihan yang menunggu (di atas form Catat). */
+function RecurringChips() {
+  const recurring = useVillage((s) => s.snapshot?.recurring);
+  const openRecurring = useVillage((s) => s.openRecurring);
+  const setPanel = useVillage((s) => s.setPanel);
+  if (!recurring?.available) return null;
+  const active = recurring.rules.filter((r) => r.kind === "expense" && ruleStatus(r) === "active").length;
+  return (
+    <div className="chips rutin-chips">
+      <button className="pill" onClick={() => openRecurring(null)} title="Langganan, kos, cicilan: dicatat lewat Pak Pos">
+        🔁 Tagihan rutin{active ? ` (${active})` : ""}
+      </button>
+      {recurring.bills.length > 0 && (
+        <button className="pill mail-pill bill" onClick={() => setPanel("letter")}>📮 {recurring.bills.length} tagihan</button>
+      )}
+    </div>
+  );
+}
+
 /** Hari tanpa belanja tetap menyalakan lampu streak, asal ditandai. */
 function NoSpendToday() {
   const streak = useStreak();
@@ -870,6 +894,7 @@ function WalletsPanel() {
   const selectedId = useVillage((s) => s.selectedWalletId);
   const openWallet = useVillage((s) => s.openWallet);
   const deleteWallet = useVillage((s) => s.deleteWallet);
+  const recurringRules = useVillage((s) => s.snapshot?.recurring.rules);
   const [mode, setMode] = useState<"list" | "add" | "edit">("list");
   const [confirm, setConfirm] = useState<number | null>(null);
   const selected = wallets.find((w) => w.id === selectedId);
@@ -924,6 +949,14 @@ function WalletsPanel() {
                     <button className="pill" onClick={(e) => { e.stopPropagation(); setMode("edit"); }}>✏️ Ubah</button>
                     {confirm === w.id ? (
                       <>
+                        {(() => {
+                          const n = (recurringRules ?? []).filter((r) => r.walletId === w.id && ruleStatus(r) !== "ended").length;
+                          return n > 0 ? (
+                            <small className="cat-hint warn block">
+                              🔁 {n} tagihan rutin memakai dompet ini; tagihannya akan menunggu dompet baru di kotak pos.
+                            </small>
+                          ) : null;
+                        })()}
                         <button className="pill danger" onClick={(e) => { e.stopPropagation(); void deleteWallet(w.id); setConfirm(null); }}>Ya, hapus</button>
                         <button className="pill ghost" onClick={(e) => { e.stopPropagation(); setConfirm(null); }}>Batal</button>
                       </>
@@ -1072,10 +1105,33 @@ function ExpenseEditForm({ expense, onDone }: { expense: ExpenseView; onDone: ()
 
 // ── Riwayat ──────────────────────────────────────────────────────────────────
 
+/** "Jadikan rutin" dari satu pengeluaran: tanggalnya jadi patokan, jatuh tempo pertama = berikutnya setelah hari ini. */
+function recurringDraftFrom(e: ExpenseView, today: number) {
+  const day = wibDay(e.date);
+  const date = wibDateParts(day).date;
+  const rule = { frequency: "monthly" as const, every: 1, dayOfMonth: date, startDay: day };
+  return {
+    kind: "expense" as const,
+    title: e.note ?? "",
+    amount: e.amount,
+    category: e.category,
+    walletId: e.walletId,
+    source: e.source,
+    place: e.placeName || e.latitude !== null ? { name: e.placeName, lat: e.latitude, lng: e.longitude } : null,
+    frequency: "monthly" as const,
+    every: 1,
+    dayOfMonth: date,
+    firstDue: dayInput(firstOnOrAfter(rule, Math.max(today, day + 1)))
+  };
+}
+
 function LogPanel() {
   const snapshot = useVillage((s) => s.snapshot);
   const deleteExpense = useVillage((s) => s.deleteExpense);
+  const openRecurring = useVillage((s) => s.openRecurring);
+  const today = useWibToday();
   const [editing, setEditing] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   if (!snapshot) return null;
   const { start, end } = (() => {
     const s = new Date(snapshot.period.year, snapshot.period.month - 1, 1);
@@ -1132,12 +1188,39 @@ function LogPanel() {
                 </b>{" "}
                 {r.kind === "save" ? "ke" : ""} {r.title}
                 {r.sub && <span className="muted"> · {r.sub}</span>}
+                {(r.expense ?? r.contribution)?.recurring && (
+                  <span className="rutin-chip" title={(r.expense ?? r.contribution)!.recurring!.auto ? "Dicatat otomatis oleh Pak Pos" : "Dari tagihan rutin"}>
+                    🔁{(r.expense ?? r.contribution)!.recurring!.auto ? "⚡" : ""}
+                  </span>
+                )}
                 <small className="muted block">{timeAgo(r.date)}</small>
               </span>
               <button className="icon-btn small" title="Edit" onClick={() => setEditing(r.id)}>✏️</button>
-              {r.expense && (
-                <button className="icon-btn danger small" title="Hapus pengeluaran (saldo dompet dikembalikan)" onClick={() => void deleteExpense(r.expense!.id)}>🗑</button>
+              {r.expense && !r.expense.recurring && snapshot.recurring.available && (
+                <button
+                  className="icon-btn small"
+                  title="Jadikan rutin"
+                  onClick={() => openRecurring(recurringDraftFrom(r.expense!, today))}
+                >
+                  🔁
+                </button>
               )}
+              {r.expense &&
+                (confirmDelete === r.id ? (
+                  <span className="confirm-row">
+                    <span>Hapus? Tagihan rutin periode ini tidak akan diantar lagi.</span>
+                    <button className="pill danger" onClick={() => void deleteExpense(r.expense!.id)}>Ya</button>
+                    <button className="pill ghost" onClick={() => setConfirmDelete(null)}>Batal</button>
+                  </span>
+                ) : (
+                  <button
+                    className="icon-btn danger small"
+                    title="Hapus pengeluaran (saldo dompet dikembalikan)"
+                    onClick={() => (r.expense!.recurring ? setConfirmDelete(r.id) : void deleteExpense(r.expense!.id))}
+                  >
+                    🗑
+                  </button>
+                ))}
             </div>
           )
         )}
@@ -1211,6 +1294,7 @@ function MonthPanel() {
           </div>
         ))}
       </section>
+      <MonthRecurring />
       <section>
         <h3>🎯 Batas jajan per tempat</h3>
         {limitViews.size === 0 && (
@@ -1375,6 +1459,8 @@ function LetterPanel() {
     : `Pratinjau ${monthLabel(summary.month, summary.year)}`;
   return (
     <>
+      <MailboxBills />
+      {snapshot.recurring.available && <h3 className="letter-title">💌 Surat dari Cyrene</h3>}
       <article className="letter">
         <header className="letter-head">
           <span className="letter-stamp">💌</span>
@@ -1414,10 +1500,11 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   log: "📜 Riwayat",
   month: "📊 Bulan ini",
   village: "🏝️ Perkembangan desa",
-  letter: "💌 Surat dari Cyrene",
+  letter: "📮 Kotak pos",
   jajan: "🗺️ Peta jajan",
   aliran: "🌊 Aliran uang",
-  journal: "📔 Jurnal tahun ini"
+  journal: "📔 Jurnal tahun ini",
+  recurring: "🔁 Tagihan & setoran rutin"
 };
 
 export default function Panels() {
@@ -1439,6 +1526,7 @@ export default function Panels() {
       {panel === "village" && <VillagePanel />}
       {panel === "letter" && <LetterPanel />}
       {panel === "journal" && <JournalPanel />}
+      {panel === "recurring" && <RecurringPanel />}
     </PanelShell>
   );
 }

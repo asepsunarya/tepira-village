@@ -8,9 +8,9 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 
 > Repo ini **memakai backend tepira yang sama** (database Postgres + login Google yang sama). Data yang tampil
 > di sini = data yang tampil di tepira.id, dan sebaliknya. Skema & migrasi tetap milik repo tepira: kolom/tabel
-> yang hanya dipakai desa (tempat pengeluaran, data desa yang sinkron antar perangkat) juga dibuat lewat migrasi
-> di sana, jadi **migrasinya harus jalan di produksi sebelum desa di-deploy** (lihat
-> [Sinkron antar perangkat](#sinkron-antar-perangkat)).
+> yang hanya dipakai desa (tempat pengeluaran, data desa yang sinkron antar perangkat, tagihan rutin) juga dibuat
+> lewat migrasi di sana, jadi **migrasinya harus jalan di produksi sebelum desa di-deploy** (lihat
+> [Sinkron antar perangkat](#sinkron-antar-perangkat) dan [Tagihan rutin & Pak Pos](#tagihan-rutin--pak-pos)).
 
 ## Konsep "game"
 
@@ -26,6 +26,7 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | Skor kesehatan (Laporan)      | Cincin skor di Balai Desa + cuaca otomatis (≥70 cerah, ≥55 berawan, <55 senja) |
 | Target tanggal goal           | Kejar deadline: tukang bekerja kalau sesuai jadwal, rumput liar tumbuh kalau telat, plus "Rp…/minggu" |
 | Insight mingguan (Laporan)    | Surat dari Cyrene di kotak pos Balai Desa; benderanya naik kalau ada surat baru |
+| —                             | 📮 Pak Pos: tagihan & setoran rutin (langganan, kos, cicilan, nabung mingguan) diantar ke kotak pos saat jatuh tempo; yang ⚡ otomatis langsung tercatat |
 | Arus bulan ini (Laporan)      | 🌊 Aliran uang: sungai dari mata air gaji/bonus ke waduk desa, lalu ke tiap kategori, goal, dan sisa |
 | —                             | Level desa: 1 XP per Rp10.000 ditabung + 5 XP per setoran               |
 | —                             | Bangunan level: dermaga (Lv4), pasar (Lv8), mercusuar (Lv15), pulau kedua (Lv25), balon udara (Lv40) |
@@ -33,8 +34,8 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | —                             | Musim pulau ikut bulan yang dilihat (hujan, panen, kemarau, mangga) + 📔 jurnal tahun ini "hari ke-N dari 365" |
 
 Level, XP, streak, dan warga dihitung di client dari data yang sudah ada. Yang ditambahkan desa sendiri (tanda nol
-pengeluaran, warga/level yang sudah dirayakan, surat terbaca, progres tur, batas jajan) tersimpan di akun dan ikut ke
-perangkat lain, lihat [Sinkron antar perangkat](#sinkron-antar-perangkat).
+pengeluaran, warga/level yang sudah dirayakan, surat terbaca, progres tur, batas jajan, tagihan rutin) tersimpan di akun
+dan ikut ke perangkat lain, lihat [Sinkron antar perangkat](#sinkron-antar-perangkat).
 
 ## Loop harian
 
@@ -44,7 +45,8 @@ Supaya desa punya alasan dibuka setiap hari, bukan hanya saat menabung:
   **nol pengeluaran** (tombol di panel Catat / panel desa) supaya hari hemat tidak memutus streak. Yang dihargai
   kebiasaan mencatat, bukan besar belanjanya. Tujuh lampu di samping jalan setapak mewakili 7 hari terakhir; lampu
   hari ini ada di depan Balai Desa dan berdenyut selama hari ini belum tercatat. Mencatat dengan tanggal kemarin
-  tetap menyalakan lampu kemarin.
+  tetap menyalakan lampu kemarin. Tagihan rutin yang dicatat **otomatis** oleh Pak Pos tidak menyalakan lampu (yang
+  dihargai kebiasaan mencatat); tagihan yang kamu Catat sendiri dari kotak pos menyalakan lampu hari jatuh temponya.
 - **Warga.** Tiap kali satu deret mencapai kelipatan 7 hari, satu warga (Ujang, Euis, Dadang, …, maks. 8) pindah
   ke desa dan menetap walaupun streak-nya kemudian putus.
 - **Bangunan level.** Ambangnya sama dengan pergantian gelar (`levelTitle`). Lokasi bangunan berikutnya ditandai
@@ -223,6 +225,7 @@ ber-`userId` NOT NULL (query dengan `{ userId }` biasa, bukan `userOwnedWhere`):
 | Surat terakhir dibuka        | `VillageState` kunci `letter`           | Yang terakhir menang                                                     |
 | Warga & level yang dirayakan | `VillageState` kunci `seen`             | Maksimum per angka (`GREATEST` di SQL), tidak pernah turun               |
 | Progres tur                  | `VillageState` kunci `tour`             | Selesai/dilewati tidak ditimpa "lanjut langkah" dari perangkat lain; ❓ mengulang tur dengan sengaja |
+| Kiriman Pak Pos yang sudah diumumkan | `VillageState` kunci `mail` (`{ occ }` = id tagihan tertinggi) | Maksimum (`GREATEST`): tagihan yang diumumkan di HP tidak diumumkan lagi di laptop |
 
 Yang **tetap per perangkat**: preferensi tampilan `tepira-village-ui` (jam/cuaca, label, sembunyikan angka, kunci kamera,
 suasana peta, efek musim) karena tergantung layar & tempat, dan PIN yang sudah dibuka (`sessionStorage`, per tab).
@@ -258,6 +261,65 @@ banjir). Urutan rilis yang benar tetap:
 Untuk server/cron: `hasNoSpendMark(userId, day)` dan `noSpendMarkedUserIds(userIds, day)` di `lib/village-state.ts` menjawab
 "hari WIB ini ditandai nol pengeluaran?" (tabel belum ada = `false`). Tanda yang masih di outbox browser (offline) belum terlihat.
 
+## Tagihan rutin & Pak Pos
+
+Langganan, kos, cicilan, iuran, dan nabung rutin cukup diatur sekali. Saat jatuh tempo **Pak Pos** (seragam oranye, topi
+biru tua, tas selempang) berjalan dari pantai dekat dermaga ke kotak pos Balai Desa, memasukkan amplop cokelat, lalu menunggu
+di depan kotak pos selama masih ada tagihan yang belum dicatat.
+
+| Di desa                         | Isinya                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 🔁 Tagihan & setoran rutin      | Daftar + form: nama, nominal, kategori, dompet, sumber (pengeluaran) atau goal (setoran), ulangi tiap minggu / 2 minggu / bulan / 3 bulan / 6 bulan / tahun, jatuh tempo pertama, "selalu akhir bulan", berapa kali (cicilan) + yang sudah dibayar, ⚡ otomatis, 📍 tempat. ✏️ Ubah, ⏸️ Jeda / ▶️ Lanjutkan, 🗑 Hapus |
+| 📮 Kotak pos (klik kotak pos / Pak Pos / chip 📮 di kartu kiri atas) | 🧾 Tagihan: Catat (nominal & dompet bisa diubah), Lewati (dengan konfirmasi), Catat semua, Lewati yang lama · 🔁 Tercatat otomatis 7 hari · 📅 Segera (≤3 hari) · surat Cyrene |
+| Pintu lain                      | Chip 🔁 di atas form Catat, "🔁 Jadikan rutin" di Riwayat (tanggal catatan jadi patokan), 🔁 Setoran rutin di detail goal & 🔁 Rutinkan di Nabung, 🔁 Rutin bulan ini di panel Bulan ini |
+| Riwayat                         | Catatan dari tagihan diberi 🔁 (🔁⚡ = otomatis). Menghapusnya mengembalikan saldo; tagihan periode itu tidak diantar lagi |
+
+Aturannya (`lib/recurring.ts`, murni + tes):
+
+- **Tanggal = kalender WIB.** Kolom `DATE` ditulis `wibDayDate(hari)`, dibaca `wibDay(date)`; pengeluaran/setoran bertanggal hari
+  jatuh temponya. Tgl 29–31 dijepit ke akhir bulan tiap kali, patokannya tetap: 31 Jan → 28 Feb → 31 Mar. Tahunan 29 Feb → 28 Feb
+  di tahun biasa. "Bulan ini" bawaan juga bulan WIB (`normalizePeriod`), jadi sewa tgl 1 yang tercatat 00:00–07:00 WIB terlihat.
+- **Tanpa tagihan mundur.** Jatuh tempo pertama ≥ hari ini; dilanjutkan dari jeda → periode selama dijeda tidak ditagih.
+- **Tagihan dibuat dulu, lalu diselesaikan.** Jatuh tempo ≤ hari ini menjadi baris `RecurringOccurrence` "pending" (maks 12 per
+  aturan per putaran, sisanya menyusul). Nominalnya disalin saat itu: mengubah aturan hanya berlaku untuk tagihan berikutnya.
+- **⚡ Otomatis** mencatat sendiri tagihan yang umurnya **≤ 35 hari** dan tidak terhalang. Yang lebih tua ("lama tidak dibuka, cek
+  dulu"), yang dompetnya sudah dihapus, dan setoran ke goal yang sudah tercapai tetap menunggu di kotak pos (dompet pengganti bisa
+  dipilih dan diingat; goal tercapai: Tetap setor / Lewati / Jeda). Menyalakan ⚡ juga berlaku untuk tagihan yang sedang menunggu
+  (≤35 hari); mematikannya langsung berhenti.
+- **Cicilan:** "berapa kali" + "sudah dibayar sebelumnya" → "cicilan 4/12"; tagihan terakhir dibuat → selesai. Lewati tetap
+  menghabiskan satu periode.
+- **Ubah jadwal** menghitung ulang dari max(pilihan, hari ini, tagihan terakhir + 1): satu tanggal tidak pernah ditagih dua kali.
+- **Hapus aturan** = tagihan yang menunggu ikut hilang; pengeluaran/setoran yang sudah tercatat tetap ada.
+- **Pengeluaran** dipotong dari dompet dengan aturan tepira (`createExpenseInTx`: aset berkurang, utang bertambah, `increment`
+  atomik). **Setoran** hanya membuat Contribution (tidak menyentuh dompet), sama seperti Nabung.
+
+Kapan diproses: render `/village` (sebelum `buildSnapshot`, jadi saldo di render pertama sudah terpotong), `fetchSnapshot` (refresh
+& ganti bulan), aksi 🔁, aksi ringan `syncRecurring` saat hari WIB berganti selagi desa terbuka atau tab kembali dilihat setelah
+>30 menit (snapshot hanya dibangun kalau ada yang berubah), dan cron lewat `processDueRecurring()`. Semua aman dijalankan bersamaan
+(dua tab, HP + laptop, cron): membuat tagihan = compare-and-set `nextDueDate` (+ `updatedAt`) lalu `createMany skipDuplicates`
+(unik `recurringId + dueDate`); menyelesaikan = klaim `pending → posted/skipped` (dengan `userId`), pengeluaran/setoran, dan
+tautannya dalam satu transaksi pendek per tagihan (hanya `tx`, tanpa `Promise.all`, `connection_limit=1`). Yang kalah balapan
+mendapat "sudah dicatat di perangkat lain", bukan error. Hasil `syncRecurring` di belakang layar dibuang kalau sementara itu ada
+aksi lain atau bulan sudah berganti.
+
+**Pengumuman.** Kiriman baru (tagihan / catatan otomatis ber-id di atas penanda `mail` di akun) diumumkan sekali: "🔁 Spotify sudah
+dicatat otomatis. 📮 Pak Pos mengantar 2 tagihan." Tanpa animasi kalau sistem minta *kurangi gerakan*, tur sedang jalan, atau layar
+penuh terbuka.
+
+**Privasi.** Pesan, label dunia (kotak pos: "🧾 2 tagihan"), dan chip HUD hanya berisi jumlah / nama tagihan, tidak pernah nominal;
+nominal di panel lewat `<Money/>` / `AmountInput` dan toast `-Rp…` di kotak pos ikut mode sembunyikan angka.
+
+**Tabel & urutan rilis.** `RecurringTransaction` dan `RecurringOccurrence` milik migrasi tepira yang sama dengan tabel sinkron
+(`20261014090000_add_village_sync_recurring_push`): migrasi dulu, baru deploy desa. Kalau desa jalan duluan, jaring urutan rilis
+yang sama berlaku: snapshot memakai `recurring.available: false` (tanpa Pak Pos, tanpa pintu 🔁), `processDueRecurring` tidak
+berbuat apa-apa, tulis = pesan ramah, dan tabelnya tidak ditanya lagi selama 60 dtk. Relasi ke tabel baru sengaja tidak di-include di
+query pengeluaran/setoran (tanda 🔁 & penyaring lampu dibaca terpisah), jadi query lama tetap jalan.
+
+Untuk cron (`lib/recurring-server.ts`): `processDueRecurring({ userId?, now?, budgetMs? })` (tanpa `userId` = semua user, per batch,
+berhenti memulai pekerjaan baru setelah `budgetMs`, default 40 dtk), `pendingBillCounts({ userIds?, now? })` (tagihan menunggu &
+yang jatuh tempo hari ini per user), dan `userIdsRecordedOn(userIds, day)` (hari itu "tercatat" tanpa menghitung yang otomatis;
+gabungkan dengan `noSpendMarkedUserIds` untuk pengingat lampu).
+
 ## Arsitektur
 
 ```
@@ -267,11 +329,12 @@ app/
   login/page.tsx          login Google (Auth.js v5), opsional dev-login
   village/page.tsx        server component: auth + buildSnapshot → <VillageApp/>
   village/actions.ts      server actions: nabung, catat pengeluaran, goal (+ target tanggal), dompet, alokasi gaji (semua balikin snapshot baru);
-                          syncVillage (op data desa, balikin snapshot.sync saja)
+                          syncVillage (op data desa, balikin snapshot.sync saja); tagihan rutin (buat/ubah/jeda/hapus, Catat/Lewati,
+                          syncRecurring ringan); page.tsx & fetchSnapshot memproses jatuh tempo dulu
   api/auth/[...nextauth]  handler Auth.js
 lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
-  wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
+  wallet-expenses.ts      port dari tepira (aturan potong/kembalikan saldo dompet, increment atomik); createExpenseInTx untuk tagihan
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
   quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
   spoken-amount.ts        🎤 bilangan yang diucapkan → angka ("lima belas ribu" → "Rp15.000") sebelum quick-entry
@@ -285,6 +348,8 @@ lib/
   village-sync.ts         data desa per user (murni): bentuk data, op idempoten + aturan gabung, outbox ringkas, impor kunci v1
   village-state.ts        (server) baca/tulis NoSpendDay, PlaceSpendLimit, VillageState; hasNoSpendMark untuk cron
   db-missing.ts           jaring urutan rilis: isMissingTable, readOrMissing, pesan ramah kalau tabel baru belum ada
+  recurring.ts            tagihan rutin (murni): jadwal WIB (dijepit akhir bulan), otomatis vs tagihan, terhalang, label, validasi
+  recurring-server.ts     (server) baca untuk snapshot, buat & selesaikan tagihan (aman bersamaan), aksi user, fungsi untuk cron
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
@@ -296,17 +361,18 @@ components/village/
   geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
   speech.ts               🎤 Web Speech (SpeechRecognition id-ID): dukungan browser, hook mendengar, pesan galat
   seasons.ts              tampilan pulau per musim (warna rumput/daun, kolam, buah), pojok musim, useReducedMotion
-  useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini
+  useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini, tagihan di kotak pos (useBills, useMail)
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
-                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Kiosks (kios langganan),
+                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Postman (Pak Pos), Kiosks (kios langganan),
                           Seasons (hujan, pelangi, kunang-kunang, layangan, daun, kupu-kupu, bendera, pojok musim)
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
   map/                    peta jajan: gameStyle (gaya peta desa siang/senja/malam), JajanMap (MapLibre + penanda)
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
                           Surat), JajanView (peta jajan layar penuh), PlaceLimit (editor & petunjuk batas jajan),
                           SalaryPanel, PlacePicker, PinGate, Tutorial, AliranView (aliran uang layar penuh),
-                          VoiceButton (🎤 catat cepat), JournalPanel (📔 jurnal tahun ini)
+                          VoiceButton (🎤 catat cepat), JournalPanel (📔 jurnal tahun ini), RecurringPanel (🔁 tagihan rutin + tagihan
+                          di 📮 kotak pos)
   tutorial/               langkah tur pengguna baru; baseline & hitungan aksi per tab (status tur tersimpan di akun)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
@@ -317,7 +383,8 @@ prisma/schema.prisma      SALINAN skema tepira — repo ini tidak punya migrasi 
 Alur data: halaman `/village` dirender di server dengan snapshot awal → client menyimpan di zustand → setiap aksi
 memanggil server action yang menulis ke DB **dengan aturan yang sama persis dengan tepira** lalu mengembalikan
 snapshot terbaru, sehingga desa langsung ter-update dalam satu round-trip. Data desa (lampu nol, batas jajan, surat,
-perayaan, tur) lewat jalur ringan: tampil seketika dari outbox, lalu `syncVillage` di belakang layar.
+perayaan, tur) lewat jalur ringan: tampil seketika dari outbox, lalu `syncVillage` di belakang layar. Tagihan rutin yang
+jatuh tempo diproses di server sebelum snapshot dibangun (render halaman, ganti bulan, aksi 🔁).
 
 ## Menjalankan
 
@@ -362,7 +429,8 @@ createdb tepira_village_dev
 # .env → DATABASE_URL="postgresql://localhost:5432/tepira_village_dev", DEV_LOGIN_EMAIL="dev@tepira.local"
 npm run db:push:dev      # membuat tabel dari salinan skema (HANYA untuk DB lokal)
 npm run seed:dev         # data contoh: 4 goal (1 telat jadwal, 1 lebih cepat), 4 dompet, alokasi gaji,
-                         # pengeluaran hampir tiap hari (streak + 3 warga), 1 insight mingguan
+                         # pengeluaran hampir tiap hari (streak + 3 warga), 1 insight mingguan, 4 tagihan/setoran rutin
+                         # (tagihan rutin juga ditambahkan ke user yang datanya sudah ada, sekali saja)
 npm run dev              # /login → tombol "Dev login (tanpa Google)"
 ```
 
@@ -417,7 +485,8 @@ tidak menangkap klik).
 
 - Drag untuk memutar, scroll/pinch untuk zoom, klik kanan/⇧+drag untuk geser. 🎯 Reset view mengembalikan sudut awal.
 - Klik bangunan goal → detail goal. Klik peti → dompet. Klik warung → catat pengeluaran. Klik balai desa / si penabung → ringkasan bulan.
-- Klik lampu, warga, bangunan level, atau baris 🔥 di kartu kiri atas → perkembangan desa. Klik kotak pos → surat mingguan.
+- Klik lampu, warga, bangunan level, atau baris 🔥 di kartu kiri atas → perkembangan desa. Klik kotak pos, Pak Pos, atau chip
+  📮 di kartu kiri atas → 📮 kotak pos (tagihan rutin + surat mingguan).
 - Klik kolam, atau kotak Pengeluaran / Sisa budget di kartu kiri atas → 🌊 aliran uang.
 - ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`); musim pulau ikut. Klik label bulan → 📔 jurnal.
 - 👁️ / 🙈 untuk menyembunyikan angka (mode privasi), 🪄 cuaca otomatis mengikuti skor kesehatan.

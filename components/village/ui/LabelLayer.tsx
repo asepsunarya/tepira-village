@@ -18,7 +18,7 @@ import { categoryIcon } from "@/lib/places";
 import { useKiosks } from "../usePlaces";
 import { HALL, LAMP_POSTS, MAILBOX, UNLOCK_SPOTS, WARUNG, goalPalette, goalPlot, walletSpot } from "../layout";
 import { useMoneyVisible, useVillage } from "../store";
-import { useLetter, useStreak, useVillageXp } from "../useProgress";
+import { useMail, useStreak, useVillageXp } from "../useProgress";
 import { useWorldLabel, type Anchor } from "../scene/labels";
 
 function WorldLabel({
@@ -225,14 +225,27 @@ function StreakLabel() {
   );
 }
 
+/** Jumlah saja, tanpa nama tagihan atau nominal: label dunia terbaca orang di sebelah. */
 function MailboxLabel() {
-  const { unread } = useLetter();
-  if (!unread) return null;
+  const { unread, bills } = useMail();
+  const delivered = useVillage((s) => s.mailDelivered);
+  const hasBills = bills > 0 && delivered;
+  if (!unread && !hasBills) return null;
   return (
     <WorldLabel id="mailbox" position={[MAILBOX.x, 1.8, MAILBOX.z]}>
-      <div className="name-pill mail-pill">
-        <span className="name-emoji">💌</span>
-        <span>Surat baru</span>
+      <div className="mail-pills">
+        {hasBills && (
+          <div className="name-pill mail-pill bill">
+            <span className="name-emoji">🧾</span>
+            <span>{bills} tagihan</span>
+          </div>
+        )}
+        {unread && (
+          <div className="name-pill mail-pill">
+            <span className="name-emoji">💌</span>
+            <span>Surat baru</span>
+          </div>
+        )}
       </div>
     </WorldLabel>
   );

@@ -5,8 +5,9 @@ import { persist } from "zustand/middleware";
 import { VILLAGE_UNLOCKS, VILLAGER_NAMES, computeStreak, levelFor, villageXp, wibDay } from "@/lib/game";
 import type { ActionResult, Snapshot } from "@/lib/game";
 import * as actions from "@/app/village/actions";
-import type { MapThemeSetting, Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
-import { HALL, LAMP_POSTS, UNLOCK_SPOTS, WARUNG, goalPlot, kioskFront } from "./layout";
+import { isFullscreenPanel, type MapThemeSetting, type Panel, type TimeOfDay, type VillagerTarget, type WorldToast } from "./types";
+import { HALL, LAMP_POSTS, MAILBOX, MAILBOX_FRONT, UNLOCK_SPOTS, WARUNG, goalPlot, kioskFront } from "./layout";
+import { newMail, type BillDecision, type RecurringInput } from "@/lib/recurring";
 import { formatCompact, periodWord } from "@/lib/format";
 import { isDemoSnapshot } from "@/lib/demo-snapshot";
 import { normalizePlaceName, spendByPlaceName, spotKeyFor } from "@/lib/places";
@@ -68,6 +69,9 @@ export interface UiSettings {
   reduceFx?: boolean;
 }
 
+/** Isian awal form 🔁 (dari Riwayat "Jadikan rutin", goal, dst.); id = mengubah aturan yang sudah ada. */
+export type RecurringDraft = Partial<RecurringInput> & { id?: number };
+
 /** Tur desa (coach mark) untuk pengguna baru. Status & langkah tersimpan di akun (storedTour), sisanya per tab. */
 export interface TourState {
   /** email pemilik progres; null = belum diinisialisasi */
@@ -113,6 +117,14 @@ interface State {
   seen: Seen | null;
   /** Progres tur yang tersimpan di akun. */
   storedTour: StoredTour | null;
+  /** id tagihan rutin tertinggi yang sudah diumumkan Pak Pos (tersimpan di akun). */
+  mailSeen: number | null;
+  /** Pak Pos berjalan ke kotak pos tiap nonce bertambah (ada kiriman baru). */
+  postman: { nonce: number } | null;
+  /** Amplop tagihan baru tampil di kotak pos setelah Pak Pos tiba (atau langsung tanpa animasi). */
+  mailDelivered: boolean;
+  /** Isian awal form tagihan rutin (panel "recurring"); null = daftar. */
+  recurringDraft: RecurringDraft | null;
   /** Tempat yang disorot saat peta jajan dibuka (kunci titik `n:<nama>`), mis. dari klik kios. */
   jajanFocus: string | null;
   /** Kios yang sedang disorot kursor (labelnya melebar menampilkan nama). */
@@ -160,6 +172,22 @@ interface State {
   reloadSyncCache: () => void;
   /** Buka peta jajan, opsional langsung menyorot satu tempat. */
   openJajan: (placeName?: string | null) => void;
+  /** Buka panel 🔁 tagihan rutin, opsional langsung ke form (draft). */
+  openRecurring: (draft?: RecurringDraft | null) => void;
+  /** Buat (tanpa id) atau ubah aturan rutin. */
+  saveRecurring: (input: RecurringInput, id?: number) => Promise<boolean>;
+  setRecurringActive: (id: number, active: boolean) => Promise<boolean>;
+  deleteRecurring: (id: number) => Promise<boolean>;
+  /** Catat / Lewati tagihan di kotak pos. */
+  settleBills: (decisions: BillDecision[]) => Promise<boolean>;
+  /** Lewati semua tagihan lama satu aturan kecuali yang terbaru. */
+  skipOldBills: (recurringId: number) => Promise<boolean>;
+  /** Proses jatuh tempo di belakang layar (hari WIB berganti); snapshot hanya diganti kalau ada yang berubah. */
+  syncRecurring: () => Promise<void>;
+  /** syncRecurring kalau terakhir lebih dari 30 menit lalu (tab kembali dilihat). */
+  syncRecurringIfStale: () => void;
+  /** Dipanggil Pak Pos saat tiba di kotak pos. */
+  deliverMail: () => void;
   setHoverKiosk: (key: string | null) => void;
 
   tour: TourState;
@@ -186,7 +214,7 @@ const uid = () => Math.random().toString(36).slice(2, 10) || "0";
 
 type SyncView = Pick<
   State,
-  "syncBase" | "syncOutbox" | "noSpendDays" | "letterRead" | "placeLimits" | "seen" | "storedTour"
+  "syncBase" | "syncOutbox" | "noSpendDays" | "letterRead" | "placeLimits" | "seen" | "storedTour" | "mailSeen"
 >;
 
 /** Data desa kosong tanpa server (landing / desa contoh). */
@@ -197,13 +225,25 @@ export const NO_SYNC_VIEW: SyncView = {
   letterRead: null,
   placeLimits: NO_LIMITS,
   seen: null,
-  storedTour: null
+  storedTour: null,
+  mailSeen: null
 };
 
 /** Jeda kirim ulang setelah gagal: 5 dtk → 10 → 20 → 40 → 60 (lalu menunggu tab dilihat / online lagi). */
 const RETRY_MS = [5_000, 10_000, 20_000, 40_000, 60_000];
 /** Tarik perubahan perangkat lain paling sering sekali per ini saat tab kembali dilihat. */
 const PULL_EVERY_MS = 30_000;
+/** Tab kembali dilihat: proses tagihan rutin lagi kalau terakhir lebih lama dari ini. */
+const RECURRING_SYNC_EVERY_MS = 30 * 60_000;
+
+const prefersReducedMotion = () =>
+  typeof window !== "undefined" && (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+
+/** "Spotify", "Spotify & Netflix", "Spotify, Netflix & 2 lainnya" */
+function titleList(titles: string[]) {
+  if (titles.length <= 2) return titles.join(" & ");
+  return `${titles.slice(0, 2).join(", ")} & ${titles.length - 2} lainnya`;
+}
 
 export const useVillage = create<State>()(
   persist(
@@ -245,7 +285,8 @@ export const useVillage = create<State>()(
           letterRead: v.letter,
           placeLimits: samePlaceLimits(cur.placeLimits, v.placeLimits) ? cur.placeLimits : v.placeLimits,
           seen: sameSeen(cur.seen, v.seen) ? cur.seen : v.seen,
-          storedTour: sameStoredTour(cur.storedTour, v.tour) ? cur.storedTour : v.tour
+          storedTour: sameStoredTour(cur.storedTour, v.tour) ? cur.storedTour : v.tour,
+          mailSeen: v.mail
         };
       };
       /** Tur yang sedang jalan di tab ini sudah selesai/dilewati di perangkat lain: ikut ditutup. */
@@ -354,6 +395,15 @@ export const useVillage = create<State>()(
         }
       };
 
+      /**
+       * Urutan hasil: aksi yang ditekan user (mutate) menaikkan seq. Hasil syncRecurring di belakang
+       * layar dibuang kalau sementara itu ada aksi lain atau bulan sudah berganti.
+       */
+      let seq = 0;
+      let recurringInflight = false;
+      let lastRecurringSync = 0;
+      let mailTimer: ReturnType<typeof setTimeout> | undefined;
+
       const apply = (result: ActionResult) => {
         if (result.ok) {
           const prev = get().snapshot;
@@ -369,12 +419,18 @@ export const useVillage = create<State>()(
           });
           afterSync();
           celebrateSoon();
+          lastRecurringSync = Date.now();
+          if (result.notice) notify(result.notice);
+          // Setelah pesan aksinya sempat terbaca.
+          clearTimeout(mailTimer);
+          mailTimer = setTimeout(announceMail, 2600);
           return true;
         }
         fail(result.message);
         return false;
       };
       const mutate = async (fn: () => Promise<ActionResult>) => {
+        seq += 1;
         set({ loading: true });
         try {
           return apply(await fn());
@@ -426,6 +482,47 @@ export const useVillage = create<State>()(
       /** Ditunda sebentar supaya pesan aksinya ("setoran tercatat" dst.) sempat terbaca dulu. */
       const celebrateSoon = () => setTimeout(celebrate, 1600);
 
+      /**
+       * Pak Pos mengumumkan kiriman baru (tagihan di kotak pos, catatan otomatis), sekali per akun:
+       * id tertinggi yang sudah diumumkan tersimpan di akun (mailSeen). Pesan tanpa nominal; toast
+       * nominal di kotak pos ikut mode sembunyikan angka.
+       */
+      const announceMail = () => {
+        const s = get().snapshot;
+        if (!s || isDemoSnapshot(s) || !s.recurring.available) return;
+        const marker = get().mailSeen;
+        const fresh = newMail(s.recurring, marker, Date.now());
+        if (fresh.maxId > (marker ?? 0)) enqueue({ t: "mail", occ: fresh.maxId });
+        if (!fresh.bills.length && !fresh.autos.length) return;
+        const rules = new Map(s.recurring.rules.map((r) => [r.id, r]));
+        const titles = [...new Set(fresh.autos.map((a) => rules.get(a.recurringId)?.title ?? "Tagihan rutin"))];
+        const parts: string[] = [];
+        if (titles.length) parts.push(`🔁 ${titleList(titles)} sudah dicatat otomatis.`);
+        if (fresh.bills.length) parts.push(`📮 Pak Pos mengantar ${fresh.bills.length} tagihan. Buka kotak pos untuk mencatat.`);
+        notify(parts.join(" "));
+        const spent = fresh.autos.filter((a) => rules.get(a.recurringId)?.kind !== "saving").reduce((sum, a) => sum + a.amount, 0);
+        const saved = fresh.autos.filter((a) => rules.get(a.recurringId)?.kind === "saving").reduce((sum, a) => sum + a.amount, 0);
+        if (spent) pushToast({ x: MAILBOX.x, z: MAILBOX.z, y: 2.8, text: `-${formatCompact(spent)}`, sub: "🔁 otomatis", tone: "spend" });
+        if (saved) pushToast({ x: MAILBOX.x, z: MAILBOX.z, y: spent ? 3.6 : 2.8, text: `+${formatCompact(saved)}`, sub: "🔁 setoran otomatis", tone: "save" });
+        // Pak Pos berjalan dari dermaga; tanpa animasi kalau sistem minta kurangi gerakan, tur jalan, atau layar penuh.
+        const walk = !prefersReducedMotion() && !get().tour.active && !isFullscreenPanel(get().panel);
+        const nonce = (get().postman?.nonce ?? 0) + 1;
+        set({ postman: { nonce }, mailDelivered: !walk });
+        // Jaga-jaga (mis. WebGL tidak jalan): amplop tetap muncul.
+        if (walk) setTimeout(() => get().postman?.nonce === nonce && set({ mailDelivered: true }), 25_000);
+      };
+
+      /** Goal yang baru tercapai karena setoran rutin (otomatis / dari kotak pos): rayakan seperti setor biasa. */
+      const celebrateGoals = (before: Snapshot | null, after: Snapshot | null) => {
+        if (!before || !after) return;
+        const prev = new Map(before.goals.map((g) => [g.id, g.progress]));
+        const done = after.goals.find((g) => (prev.get(g.id) ?? 1) < 1 && g.progress >= 1);
+        if (!done) return;
+        set({ celebrateGoalId: done.id });
+        notify(`🎉 Goal "${done.title}" tercapai! Bangunannya selesai.`);
+        setTimeout(() => set({ celebrateGoalId: null }), 6000);
+      };
+
       return {
         snapshot: null,
         loading: false,
@@ -443,6 +540,9 @@ export const useVillage = create<State>()(
         ...NO_SYNC_VIEW,
         jajanFocus: null,
         hoverKiosk: null,
+        postman: null,
+        mailDelivered: true,
+        recurringDraft: null,
         tour: IDLE_TOUR,
         tourHits: NO_HITS,
 
@@ -452,13 +552,89 @@ export const useVillage = create<State>()(
           lastContact = Date.now();
           // Data desa dari server ikut di snapshot halaman (tanpa kedipan lampu kosong); data v1 di
           // browser ini diimpor sekali lewat outbox sebelum celebrate & initTour membacanya.
-          set({ snapshot, unlocked: snapshot.pinRequired ? unlockedBefore : true, ...freshSync(snapshot) });
+          set({
+            snapshot,
+            unlocked: snapshot.pinRequired ? unlockedBefore : true,
+            postman: null,
+            mailDelivered: true,
+            ...freshSync(snapshot)
+          });
           afterSync();
+          // Halaman baru saja memproses tagihan rutin di server.
+          lastRecurringSync = Date.now();
           // Warga/bangunan yang bertambah sejak kunjungan terakhir (mis. mencatat lewat tepira.id).
           setTimeout(celebrate, 900);
+          // Kiriman Pak Pos sejak kunjungan terakhir, setelah pesan perayaan sempat terbaca.
+          clearTimeout(mailTimer);
+          mailTimer = setTimeout(announceMail, 2400);
         },
-        // Fokus tempat hanya berlaku untuk satu kali buka lewat openJajan.
-        setPanel: (panel) => set({ panel, jajanFocus: null }),
+        // Fokus tempat & draft form hanya berlaku untuk satu kali buka.
+        setPanel: (panel) => set({ panel, jajanFocus: null, recurringDraft: null }),
+        openRecurring: (draft) => set({ panel: "recurring", recurringDraft: draft ?? null, jajanFocus: null }),
+        deliverMail: () => set({ mailDelivered: true }),
+        saveRecurring: async (input, id) => {
+          const ok = await mutate(() =>
+            id ? actions.updateRecurring(id, input, period()) : actions.createRecurring(input, period())
+          );
+          if (ok) set({ recurringDraft: null });
+          return ok;
+        },
+        setRecurringActive: async (id, active) => mutate(() => actions.setRecurringStatus(id, active, period())),
+        deleteRecurring: async (id) => {
+          const ok = await mutate(() => actions.deleteRecurring(id, period()));
+          if (ok) set({ recurringDraft: null });
+          return ok;
+        },
+        settleBills: async (decisions) => {
+          const before = get().snapshot;
+          const ok = await mutate(() => actions.settleRecurringBills(decisions, period()));
+          const after = get().snapshot;
+          if (!ok || !before || !after) return ok;
+          // Yang benar-benar tercatat = tagihan "Catat" yang sudah tidak menunggu lagi.
+          const stillPending = new Set(after.recurring.bills.map((b) => b.id));
+          const kinds = new Map(before.recurring.rules.map((r) => [r.id, r.kind]));
+          let spent = 0;
+          let saved = 0;
+          for (const d of decisions) {
+            const bill = before.recurring.bills.find((b) => b.id === d.id);
+            if (!bill || d.action !== "pay" || stillPending.has(d.id)) continue;
+            if (kinds.get(bill.recurringId) === "saving") saved += d.amount ?? bill.amount;
+            else spent += d.amount ?? bill.amount;
+          }
+          if (spent || saved) {
+            walkTo(MAILBOX_FRONT.x, MAILBOX_FRONT.z, saved && !spent ? "save" : "spend", MAILBOX_FRONT.yaw);
+            if (spent) pushToast({ x: MAILBOX.x, z: MAILBOX.z, y: 2.8, text: `-${formatCompact(spent)}`, sub: "📮 tagihan", tone: "spend" });
+            if (saved) pushToast({ x: MAILBOX.x, z: MAILBOX.z, y: spent ? 3.6 : 2.8, text: `+${formatCompact(saved)}`, sub: "📮 setoran rutin", tone: "save" });
+          }
+          celebrateGoals(before, after);
+          return ok;
+        },
+        skipOldBills: async (recurringId) => mutate(() => actions.skipOldRecurringBills(recurringId, period())),
+        syncRecurring: async () => {
+          const s = get().snapshot;
+          if (!s || isDemoSnapshot(s) || get().loading || recurringInflight) return;
+          const my = seq;
+          const p = s.period;
+          recurringInflight = true;
+          lastRecurringSync = Date.now();
+          try {
+            const res = await actions.syncRecurring(p);
+            if (!res.ok || !("snapshot" in res)) return;
+            const cur = get().snapshot;
+            // Ada aksi lain, bulan berganti, atau akun berganti selama request: hasil ini sudah basi.
+            if (seq !== my || get().loading || !cur || isDemoSnapshot(cur)) return;
+            if (cur.period.month !== p.month || cur.period.year !== p.year || tourOwner(cur) !== tourOwner(res.snapshot)) return;
+            apply(res);
+            celebrateGoals(cur, res.snapshot);
+          } catch {
+            // diam saja: dicoba lagi saat hari berganti / tab dilihat lagi, dan tiap aksi memproses juga
+          } finally {
+            recurringInflight = false;
+          }
+        },
+        syncRecurringIfStale: () => {
+          if (Date.now() - lastRecurringSync > RECURRING_SYNC_EVERY_MS) void get().syncRecurring();
+        },
         openJajan: (placeName) =>
           set({ panel: "jajan", jajanFocus: placeName ? spotKeyFor(placeName) : null, hoverKiosk: null }),
         setHoverKiosk: (hoverKiosk) => set({ hoverKiosk }),
@@ -775,7 +951,9 @@ if (typeof window !== "undefined") {
   });
   // Kembali ke tab / kembali online: kirim yang tertunda dan tarik perubahan dari perangkat lain.
   const wake = () => {
-    if (document.visibilityState === "visible") void useVillage.getState().syncNow();
+    if (document.visibilityState !== "visible") return;
+    void useVillage.getState().syncNow();
+    useVillage.getState().syncRecurringIfStale();
   };
   document.addEventListener("visibilitychange", wake);
   window.addEventListener("online", wake);

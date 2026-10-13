@@ -20,7 +20,8 @@ import { normalizePlaceName } from "@/lib/places";
  * - `NoSpendDay`      satu baris per hari WIB yang ditandai
  * - `PlaceSpendLimit` satu baris per tempat (placeKey = normalizePlaceName(nama))
  * - `VillageState`    kunci → JSON: "letter" (tulisan terakhir menang), "seen" (maksimum per angka),
- *                     "tour" (selesai/dilewati tidak ditimpa "active" kecuali tur diulang lewat ❓)
+ *                     "tour" (selesai/dilewati tidak ditimpa "active" kecuali tur diulang lewat ❓),
+ *                     "mail" (kiriman Pak Pos terakhir yang sudah diumumkan, maksimum)
  *
  * Browser mengirim perubahan sebagai op kecil yang idempoten (nilai mutlak, bukan "toggle"), jadi
  * op yang terkirim dua kali (respons hilang, dua tab) tidak merusak apa pun.
@@ -50,7 +51,7 @@ export interface Seen {
 
 // ── Bentuk data ──────────────────────────────────────────────────────────────
 /** Kunci VillageState yang dipakai desa. Kunci lain di tabel itu diabaikan. */
-export const VILLAGE_STATE_KEYS = ["letter", "seen", "tour"] as const;
+export const VILLAGE_STATE_KEYS = ["letter", "seen", "tour", "mail"] as const;
 export type VillageStateKey = (typeof VILLAGE_STATE_KEYS)[number];
 
 export interface VillageSyncData {
@@ -63,6 +64,11 @@ export interface VillageSyncData {
   /** null = belum pernah (perayaan pertama hanya mencatat diam-diam) */
   seen: Seen | null;
   tour: StoredTour | null;
+  /**
+   * id RecurringOccurrence tertinggi yang sudah diumumkan Pak Pos (tagihan baru / tercatat otomatis);
+   * null = belum pernah. Hanya naik, jadi kiriman yang diumumkan di HP tidak diumumkan lagi di laptop.
+   */
+  mail: number | null;
 }
 
 export interface VillageSync extends VillageSyncData {
@@ -80,7 +86,8 @@ export const EMPTY_SYNC_DATA: VillageSyncData = Object.freeze({
   placeLimits: NO_LIMITS,
   letter: null,
   seen: null,
-  tour: null
+  tour: null,
+  mail: null
 }) as VillageSyncData;
 
 /** Tanpa server: desa contoh, atau belum pernah tersambung. */
@@ -100,6 +107,8 @@ const OP_ID = /^[a-z0-9]{1,16}$/;
 const LETTER_KEY = /^[iw]\d{1,12}$/;
 /** Batas wajar supaya JSON aneh tidak masuk ke VillageState. */
 const MAX_SEEN_LEVEL = 9_999;
+/** id SERIAL Postgres. */
+const MAX_MAIL_ID = 2_147_483_647;
 
 export type SyncOp =
   /** tandai (on) / batalkan (off) nol pengeluaran; menandai hanya hari ini & NOSPEND_BACKFILL_DAYS sebelumnya */
@@ -108,6 +117,8 @@ export type SyncOp =
   | { id: string; t: "limit"; name: string; limit: number | null }
   | { id: string; t: "letter"; key: string }
   | { id: string; t: "seen"; villagers: number; level: number }
+  /** penanda kiriman Pak Pos (maksimum, tidak pernah turun) */
+  | { id: string; t: "mail"; occ: number }
   /**
    * restart = tur diulang lewat ❓ (selalu menimpa). Tanpa itu, "active" tidak menimpa tur yang sudah
    * selesai/dilewati di perangkat lain. Status selesai/dilewati selalu menimpa.
@@ -162,6 +173,12 @@ export function parseSeen(v: unknown): Seen | null {
   return ok(s.villagers) && ok(s.level) ? { villagers: s.villagers, level: s.level } : null;
 }
 
+/** Penanda kiriman Pak Pos: angka (salinan browser) atau { occ } (nilai VillageState "mail"). */
+export function parseMail(v: unknown): number | null {
+  const n = v && typeof v === "object" && !Array.isArray(v) ? (v as { occ?: unknown }).occ : v;
+  return isInt(n) && n >= 0 && n <= MAX_MAIL_ID ? n : null;
+}
+
 export function parseTour(v: unknown): StoredTour | null {
   if (!v || typeof v !== "object") return null;
   const t = v as Partial<StoredTour>;
@@ -184,7 +201,8 @@ export function parseSyncData(raw: unknown, today: number): VillageSyncData {
     placeLimits: parsePlaceLimits(r.placeLimits),
     letter: parseLetterKey(r.letter),
     seen: parseSeen(r.seen),
-    tour: parseTour(r.tour)
+    tour: parseTour(r.tour),
+    mail: parseMail(r.mail)
   };
 }
 
@@ -242,6 +260,11 @@ export function parseSyncOps(raw: unknown, max = MAX_OPS_PER_CALL): SyncOp[] {
       case "seen": {
         const seen = parseSeen(o);
         if (seen) out.push({ id, t: "seen", ...seen });
+        break;
+      }
+      case "mail": {
+        const occ = parseMail(o.occ);
+        if (occ !== null) out.push({ id, t: "mail", occ });
         break;
       }
       case "tour": {
@@ -320,6 +343,8 @@ export function applySyncOp(s: VillageSyncData, op: SyncOp, today: number): Vill
         : { villagers: op.villagers, level: op.level };
       return s.seen && s.seen.villagers === next.villagers && s.seen.level === next.level ? s : { ...s, seen: next };
     }
+    case "mail":
+      return s.mail !== null && s.mail >= op.occ ? s : { ...s, mail: op.occ };
     case "tour": {
       if (!tourUnconditional(op) && isTerminalTour(s.tour)) return s;
       const next: StoredTour = { status: op.status, step: clampTourStep(op.step) };
@@ -370,7 +395,8 @@ export const dataOf = (s: VillageSyncData): VillageSyncData => ({
   placeLimits: s.placeLimits,
   letter: s.letter,
   seen: s.seen,
-  tour: s.tour
+  tour: s.tour,
+  mail: s.mail
 });
 
 /** Dari dua salinan server, yang dibaca lebih belakangan (seri: yang datang). */
@@ -391,6 +417,8 @@ const opKey = (op: Exclude<SyncOp, { t: "import" }>) => {
       return "l";
     case "seen":
       return "s";
+    case "mail":
+      return "m";
     case "tour":
       return "t";
   }
@@ -398,6 +426,7 @@ const opKey = (op: Exclude<SyncOp, { t: "import" }>) => {
 
 /** Dua op berurutan untuk kunci yang sama → satu op dengan hasil yang sama. id = milik op terbaru. */
 function fold(prev: Exclude<SyncOp, { t: "import" }>, op: Exclude<SyncOp, { t: "import" }>): SyncOp {
+  if (op.t === "mail" && prev.t === "mail") return { ...op, occ: Math.max(prev.occ, op.occ) };
   if (op.t === "seen" && prev.t === "seen") {
     return { ...op, villagers: Math.max(prev.villagers, op.villagers), level: Math.max(prev.level, op.level) };
   }
@@ -409,7 +438,7 @@ function fold(prev: Exclude<SyncOp, { t: "import" }>, op: Exclude<SyncOp, { t: "
 }
 
 /**
- * Ringkas outbox: satu op per kunci (hari, tempat, surat, perayaan, tur) di posisi kemunculan
+ * Ringkas outbox: satu op per kunci (hari, tempat, surat, perayaan, tur, Pak Pos) di posisi kemunculan
  * terakhirnya. Op impor jadi pembatas (tidak digabung, op tidak dipindah melewatinya). id op
  * gabungan selalu id op terbaru, jadi op yang sedang terkirim dari tab lain tidak ikut terhapus
  * saat tab itu menerima konfirmasi.

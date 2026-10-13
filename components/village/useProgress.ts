@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DAY_MS, WIB_OFFSET_MS, computeStreak, levelFor, villageXp, wibDay } from "@/lib/game";
+import { billItems, type BillContext, type BillItem } from "@/lib/recurring";
 import { letterKey } from "./daily";
 import { useVillage } from "./store";
 
@@ -40,4 +41,37 @@ export function useLetter() {
   const today = useWibToday();
   const key = letterKey(insight, today);
   return { key, insight, unread: read !== key };
+}
+
+const NO_BILLS: BillItem[] = [];
+
+/** Dompet & progres goal untuk menilai tagihan yang terhalang (dompet dihapus, goal tercapai). */
+export function useBillContext(): BillContext {
+  const wallets = useVillage((s) => s.snapshot?.wallets);
+  const goals = useVillage((s) => s.snapshot?.goals);
+  return useMemo(
+    () => ({
+      walletIds: new Set((wallets ?? []).map((w) => w.id)),
+      goalProgress: new Map((goals ?? []).map((g) => [g.id, g.progress]))
+    }),
+    [wallets, goals]
+  );
+}
+
+/** Tagihan di kotak pos (paling lama dulu), lengkap dengan aturannya. */
+export function useBills(): BillItem[] {
+  const recurring = useVillage((s) => s.snapshot?.recurring);
+  const ctx = useBillContext();
+  const today = useWibToday();
+  return useMemo(
+    () => (recurring?.available && recurring.bills.length ? billItems(recurring, ctx, today) : NO_BILLS),
+    [recurring, ctx, today]
+  );
+}
+
+/** Kotak pos: surat Cyrene belum dibuka & jumlah tagihan yang menunggu (tanpa nominal). */
+export function useMail() {
+  const { unread } = useLetter();
+  const bills = useVillage((s) => (s.snapshot?.recurring.available ? s.snapshot.recurring.bills.length : 0));
+  return { unread, bills };
 }

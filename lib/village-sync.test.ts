@@ -268,6 +268,7 @@ test("compactOutbox: hasil sama dengan menerapkan semua op (uji acak)", () => {
       if (k < 0.5) return limit(pick(places), r() < 0.3 ? null : 1000 + Math.floor(r() * 5));
       if (k < 0.6) return { id: id(), t: "letter", key: pick(["i1", "i2", "w20736"]) };
       if (k < 0.7) return seen(Math.floor(r() * 4), Math.floor(r() * 9));
+      if (k < 0.75) return { id: id(), t: "mail", occ: Math.floor(r() * 50) };
       if (k < 0.93) return tour(pick(statuses), Math.floor(r() * 9), r() < 0.2);
       return importOp({
         noSpend: [TODAY - 10, TODAY],
@@ -281,7 +282,8 @@ test("compactOutbox: hasil sama dengan menerapkan semua op (uji acak)", () => {
       noSpend: r() < 0.5 ? [TODAY - 1] : [],
       placeLimits: r() < 0.5 ? { kopi: { name: "Kopi", limit: 500 } } : {},
       seen: r() < 0.5 ? { villagers: 1, level: 2 } : null,
-      tour: r() < 0.5 ? { status: pick(statuses), step: 4 } : null
+      tour: r() < 0.5 ? { status: pick(statuses), step: 4 } : null,
+      mail: r() < 0.5 ? 20 : null
     });
     assert.deepEqual(applySyncOps(base, compactOutbox(ops), TODAY), applySyncOps(base, ops, TODAY), `seed ${seed}`);
   }
@@ -403,4 +405,25 @@ test("impor kunci v1: sidik jari & op impor", () => {
   assert.notEqual(legacyFingerprint({ ...raw, letter: JSON.stringify("i13") }), fp, "berubah kalau isinya berubah");
   assert.equal(importFromLegacy({ ...RAW_EMPTY, seen: "{rusak", letter: "123" }, "x2", TODAY), null, "semua rusak = tidak ada impor");
   assert.ok(legacyFingerprint({ ...RAW_EMPTY, seen: "{rusak" }), "tetap ditandai sudah dicek walau isinya rusak");
+});
+
+test("mail (penanda kiriman Pak Pos): hanya naik, bentuk DB { occ } & salinan angka", () => {
+  const mail = (occ: number): SyncOp => ({ id: id(), t: "mail", occ });
+  const a = applySyncOp(data(), mail(12), TODAY);
+  assert.equal(a.mail, 12);
+  assert.equal(applySyncOp(a, mail(7), TODAY), a, "angka lebih kecil dari perangkat lain tidak menurunkan");
+  assert.equal(applySyncOp(a, mail(30), TODAY).mail, 30);
+  assert.equal(parseSyncData({ mail: 5 }, TODAY).mail, 5);
+  assert.equal(parseSyncData({ mail: { occ: 9 } }, TODAY).mail, 9);
+  assert.equal(parseSyncData({ mail: -1 }, TODAY).mail, null);
+  assert.deepEqual(
+    parseSyncOps([
+      { id: "m1", t: "mail", occ: 4 },
+      { id: "m2", t: "mail", occ: "4" },
+      { id: "m3", t: "mail", occ: 1.5 }
+    ]),
+    [{ id: "m1", t: "mail", occ: 4 }]
+  );
+  const [first, second] = [mail(9), mail(3)];
+  assert.deepEqual(compactOutbox([first, second]), [{ ...second, occ: 9 }]);
 });

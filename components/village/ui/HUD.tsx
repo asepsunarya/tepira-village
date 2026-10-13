@@ -45,6 +45,7 @@ export default function HUD() {
   const lock = useVillage((s) => s.lock);
   const startTour = useVillage((s) => s.startTour);
   const streak = useStreak();
+  const bills = useVillage((s) => (s.snapshot?.recurring.available ? s.snapshot.recurring.bills.length : 0));
   const [menu, setMenu] = useState(false);
 
   if (!snapshot) return null;
@@ -161,6 +162,16 @@ export default function HUD() {
           <span className="stat">
             🏡 <b>{doneGoals}</b>/{snapshot.goals.length} goal selesai
           </span>
+          {/* Jumlah saja (tanpa nama/nominal); di HP kotak pos 3D terlalu kecil, jadi ini pintunya. */}
+          {bills > 0 && (
+            <button
+              className={`stat mail ${panel === "letter" ? "on" : ""}`}
+              onClick={() => setPanel(panel === "letter" ? null : "letter")}
+              title="Tagihan rutin menunggu di kotak pos"
+            >
+              📮 <b>{bills}</b> tagihan
+            </button>
+          )}
           <span className={`stat ${loading ? "offline" : "live"}`}>
             <i className={`dot ${loading ? "off" : "pulse"}`} /> {loading ? "MENYIMPAN…" : "TERSAMBUNG"}
           </span>

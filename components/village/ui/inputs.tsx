@@ -68,3 +68,20 @@ export const CATEGORY_GROUPS = (() => {
   for (const c of expenseCategories) (g[c.group] ??= []).push({ key: c.key, label: c.label });
   return g;
 })();
+
+export function CategorySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  // Kategori lama yang tidak ada di daftar (mis. diketik di tepira) tetap bisa dipilih.
+  const known = expenseCategories.some((c) => c.label === value);
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {!known && value && <option value={value}>{value}</option>}
+      {Object.entries(CATEGORY_GROUPS).map(([group, items]) => (
+        <optgroup key={group} label={group}>
+          {items.map((c) => (
+            <option key={c.key} value={c.label}>{c.label}</option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}

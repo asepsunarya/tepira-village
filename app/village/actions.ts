@@ -15,6 +15,17 @@ import type { ActionResult } from "@/lib/game";
 import { MISSING_TABLE_MESSAGE, isMissingTable } from "@/lib/db-missing";
 import { parseSyncOps, type SyncResult } from "@/lib/village-sync";
 import { applyVillageOps, loadVillageSync } from "@/lib/village-state";
+import { dayLabel, dueLabel, type RecurringInput } from "@/lib/recurring";
+import {
+  createRecurringRule,
+  deleteRecurringRule,
+  processDueRecurring,
+  setRecurringActive,
+  settleBills,
+  skipOlderBills,
+  updateRecurringRule
+} from "@/lib/recurring-server";
+import { wibDay } from "@/lib/game";
 
 /**
  * Semua server action menulis ke database tepira dengan aturan yang sama
@@ -32,12 +43,13 @@ async function requireUserId() {
   return userId;
 }
 
-async function run(period: Period, fn: (userId: string) => Promise<void>): Promise<ActionResult> {
+/** `fn` boleh mengembalikan pesan sukses (tanpa nominal): ditampilkan store sebagai notice. */
+async function run(period: Period, fn: (userId: string) => Promise<string | void>): Promise<ActionResult> {
   try {
     const userId = await requireUserId();
-    await fn(userId);
+    const notice = await fn(userId);
     const { month, year } = normalizePeriod(period.month, period.year);
-    return { ok: true, snapshot: await buildSnapshot(userId, month, year) };
+    return { ok: true, snapshot: await buildSnapshot(userId, month, year), ...(notice ? { notice } : {}) };
   } catch (error) {
     console.error("[village action]", error);
     return { ok: false, message: error instanceof Error ? error.message : "Terjadi kesalahan." };
@@ -57,8 +69,109 @@ function assertAmount(amount: number, label = "Nominal") {
   if (amount > MAX_AMOUNT) throw new Error(`${label} terlalu besar (maksimal Rp2.147.483.647).`);
 }
 
+/**
+ * Tagihan rutin yang jatuh tempo dibuat & yang ⚡ otomatis dicatat sebelum snapshot dibangun. Tidak
+ * pernah menggagalkan aksinya (tabel belum ada / error lain cukup dicatat di log).
+ */
+async function processQuietly(userId: string) {
+  try {
+    return await processDueRecurring({ userId });
+  } catch (error) {
+    console.error("[recurring]", error);
+    return null;
+  }
+}
+
 export async function fetchSnapshot(period: Period): Promise<ActionResult> {
-  return run(period, async () => {});
+  return run(period, async (userId) => {
+    await processQuietly(userId);
+  });
+}
+
+// ── Tagihan & setoran rutin ("Pak Pos") ──────────────────────────────────────
+
+/** Hasil syncRecurring: changed:false = tidak ada tagihan baru / catatan otomatis, snapshot tidak dibangun. */
+export type RecurringSyncResult = { ok: true; changed: false } | ActionResult;
+
+/**
+ * Aksi ringan saat hari WIB berganti / tab kembali dilihat: proses jatuh tempo, dan snapshot hanya
+ * dibangun kalau memang ada yang berubah.
+ */
+export async function syncRecurring(period: Period): Promise<RecurringSyncResult> {
+  try {
+    const userId = await requireUserId();
+    const result = await processQuietly(userId);
+    if (!result || (!result.materialized && !result.posted)) return { ok: true, changed: false };
+    const { month, year } = normalizePeriod(period.month, period.year);
+    return { ok: true, snapshot: await buildSnapshot(userId, month, year) };
+  } catch (error) {
+    console.error("[recurring sync]", error);
+    return { ok: false, message: error instanceof Error ? error.message : "Terjadi kesalahan." };
+  }
+}
+
+const dueWords = (day: number) => {
+  const today = wibDay(Date.now());
+  const when = dueLabel(day, today);
+  return day - today > 1 ? `${dayLabel(day)} (${when})` : when;
+};
+
+export async function createRecurring(input: RecurringInput, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const rule = await createRecurringRule(userId, input);
+    await processQuietly(userId); // jatuh tempo hari ini: tagihannya langsung diantar
+    const kind = input.kind === "saving" ? "Setoran rutin" : "Tagihan rutin";
+    return `🔁 ${kind} "${rule.title}" disimpan. Pertama: ${dueWords(rule.nextDueDay)}.`;
+  });
+}
+
+export async function updateRecurring(id: number, input: RecurringInput, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const rule = await updateRecurringRule(userId, toInt(id), input);
+    await processQuietly(userId);
+    return rule.scheduleMoved
+      ? `🔁 "${rule.title}" disimpan. Berikutnya: ${dueWords(rule.nextDueDay)}.`
+      : `🔁 "${rule.title}" disimpan. Berlaku untuk tagihan berikutnya.`;
+  });
+}
+
+export async function setRecurringStatus(id: number, active: boolean, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const r = await setRecurringActive(userId, toInt(id), Boolean(active));
+    if (!active) return "⏸️ Dijeda. Pak Pos tidak mengantar tagihan baru sampai dilanjutkan.";
+    await processQuietly(userId);
+    return `▶️ Dilanjutkan. Tagihan selama dijeda tidak ditagih${r.nextDueDay !== null ? `; berikutnya ${dueWords(r.nextDueDay)}` : ""}.`;
+  });
+}
+
+export async function deleteRecurring(id: number, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    await deleteRecurringRule(userId, toInt(id));
+    return "🗑 Dihapus. Catatan yang sudah tercatat tetap ada.";
+  });
+}
+
+/** Catat / Lewati tagihan di kotak pos (maks 24 sekaligus). Yang gagal tidak menggagalkan yang lain. */
+export async function settleRecurringBills(decisions: unknown, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const r = await settleBills(userId, decisions);
+    if (r.errors.length && !r.posted && !r.skipped) throw new Error(r.errors[0]);
+    const parts: string[] = [];
+    if (r.posted) parts.push(`📮 ${r.posted} tagihan tercatat`);
+    if (r.skipped) parts.push(`${r.skipped} dilewati`);
+    let notice = parts.length ? `${parts.join(", ")}.` : "";
+    if (r.stale) notice += " Sebagian sudah dicatat di perangkat lain.";
+    if (r.errors.length) notice += ` ${r.errors.length} gagal: ${r.errors[0]}`;
+    return notice.trim() || "Tagihan ini sudah dicatat di perangkat lain.";
+  });
+}
+
+/** Lewati semua tagihan lama satu aturan, kecuali yang paling baru. */
+export async function skipOldRecurringBills(recurringId: number, period: Period): Promise<ActionResult> {
+  return run(period, async (userId) => {
+    const n = await skipOlderBills(userId, toInt(recurringId));
+    return n ? `${n} tagihan lama dilewati. Tinggal yang terbaru.` : "Tidak ada tagihan lama.";
+  });
 }
 
 // ── Data desa yang sinkron antar perangkat ───────────────────────────────────

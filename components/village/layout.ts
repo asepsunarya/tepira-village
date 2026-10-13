@@ -126,6 +126,11 @@ export function kioskFront(spot: { x: number; z: number; rot: number }, distance
   return { x: spot.x + distance * Math.sin(spot.rot), z: spot.z + distance * Math.cos(spot.rot), yaw: spot.rot + Math.PI };
 }
 
+/** Pak Pos datang dari pantai dekat dermaga (sama dengan warga baru; sudah darat walau dermaga belum terbuka). */
+export const POSTMAN_START = { x: DOCK.x + 0.3, z: DOCK.z - 0.6 };
+/** Tempat Pak Pos berdiri menunggu tagihan dicatat: di depan kotak pos, menghadap kotaknya. */
+export const MAILBOX_FRONT = kioskFront(MAILBOX, 1.0);
+
 /** Titik di darat untuk papan "segera dibangun" dan toast saat terbuka. */
 export const UNLOCK_SPOTS: Record<UnlockKey, { x: number; z: number }> = {
   dermaga: { x: DOCK.x + 0.3, z: DOCK.z - 0.6 },

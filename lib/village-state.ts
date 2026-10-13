@@ -13,6 +13,7 @@ import {
   isTerminalTour,
   noSpendAllowed,
   parseLetterKey,
+  parseMail,
   parseSeen,
   parseTour,
   type Seen,
@@ -29,7 +30,7 @@ import {
  * - NoSpendDay: tandai = createMany skipDuplicates (hanya hari ini..2 hari lalu), batalkan = deleteMany.
  * - PlaceSpendLimit: upsert/hapus per (userId, placeKey); tempat baru ditolak kalau sudah 50.
  * - VillageState: "letter" ditimpa, "seen" GREATEST per angka, "tour" selesai/dilewati tidak ditimpa
- *   "active" kecuali tur diulang.
+ *   "active" kecuali tur diulang, "mail" (penanda kiriman Pak Pos) GREATEST.
  * Tabel baru ber-userId NOT NULL: selalu `{ userId }`, bukan userOwnedWhere.
  */
 
@@ -75,7 +76,8 @@ async function readVillageSync(userId: string, today: number): Promise<VillageSy
     ),
     letter: parseLetterKey(flag("letter")),
     seen: parseSeen(flag("seen")),
-    tour: parseTour(flag("tour"))
+    tour: parseTour(flag("tour")),
+    mail: parseMail(flag("mail"))
   };
 }
 
@@ -119,6 +121,9 @@ async function applyOne(userId: string, op: SyncOp, today: number) {
       return;
     case "seen":
       await raiseSeen(userId, op);
+      return;
+    case "mail":
+      await raiseMail(userId, op.occ);
       return;
     case "tour": {
       const tour: StoredTour = { status: op.status, step: op.step };
@@ -217,6 +222,18 @@ async function raiseSeen(userId: string, seen: Seen) {
         'level', GREATEST(${seen.level}::int, CASE WHEN jsonb_typeof("VillageState"."value"->'level') = 'number'
           THEN floor(("VillageState"."value"->>'level')::numeric) ELSE 0 END)
       ),
+      "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
+}
+
+/** Penanda kiriman Pak Pos = maksimum, atomik (HP & laptop mengumumkan bersamaan tidak saling menurunkan). */
+async function raiseMail(userId: string, occ: number) {
+  await prisma.$executeRaw`
+    INSERT INTO "VillageState" ("userId", "key", "value", "createdAt", "updatedAt")
+    VALUES (${userId}, 'mail', ${JSON.stringify({ occ })}::jsonb,
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'), (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
+    ON CONFLICT ("userId", "key") DO UPDATE SET
+      "value" = jsonb_build_object('occ', GREATEST(${occ}::int, CASE WHEN jsonb_typeof("VillageState"."value"->'occ') = 'number'
+        THEN floor(("VillageState"."value"->>'occ')::numeric) ELSE 0 END)),
       "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
 }
 
