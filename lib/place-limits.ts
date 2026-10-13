@@ -1,8 +1,9 @@
 import { normalizePlaceName } from "@/lib/places";
 
 /**
- * Batas jajan per tempat ("Kopi Toko Djawa maks. Rp150 rb/bulan"). Disimpan per user di browser
- * (components/village/daily.ts), jadi semua yang masuk dari storage dibersihkan lewat parsePlaceLimits.
+ * Batas jajan per tempat ("Kopi Toko Djawa maks. Rp150 rb/bulan"). Tersimpan per user di tabel
+ * PlaceSpendLimit (lib/village-state.ts, sinkron lewat lib/village-sync.ts) dengan salinan di browser,
+ * jadi semua yang masuk dari database maupun storage dibersihkan lewat parsePlaceLimits.
  */
 
 export type LimitLevel = "ok" | "warn" | "over";

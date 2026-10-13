@@ -9,6 +9,7 @@ import {
   type Snapshot,
   type WalletView
 } from "@/lib/game";
+import { LOCAL_SYNC } from "@/lib/village-sync";
 
 /**
  * Desa contoh untuk landing page. Semua angka fiktif dan TIDAK pernah dikirim ke server.
@@ -252,6 +253,8 @@ export function createDemoSnapshot(now = new Date()): Snapshot {
       insight: null,
       places: [],
       placesBefore: [],
+      // available:false: store tidak pernah mengirim apa pun ke server untuk desa contoh.
+      sync: LOCAL_SYNC,
       pinRequired: false,
       devLogin: false,
       generatedAt: now.toISOString()

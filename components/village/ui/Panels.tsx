@@ -1244,6 +1244,7 @@ function VillagePanel() {
   const streak = useStreak();
   const { xp, level } = useVillageXp();
   const toggleNoSpend = useVillage((s) => s.toggleNoSpend);
+  const synced = useVillage((s) => s.syncBase.available);
   const setPanel = useVillage((s) => s.setPanel);
   const moneyVisible = useMoneyVisible();
   return (
@@ -1288,8 +1289,8 @@ function VillagePanel() {
       </div>
       <p className="muted small">
         Hari tercatat = ada pengeluaran atau setoran bertanggal hari itu (WIB). Lupa kemarin? Catat dengan tanggal kemarin,
-        lampunya tetap menyala. Tanda &quot;nol&quot; bisa untuk hari ini dan {NOSPEND_BACKFILL_DAYS} hari sebelumnya, tersimpan di
-        perangkat ini.
+        lampunya tetap menyala. Tanda &quot;nol&quot; bisa untuk hari ini dan {NOSPEND_BACKFILL_DAYS} hari sebelumnya,{" "}
+        {synced ? "tersimpan di akunmu (ikut ke perangkat lain)." : "untuk sementara disimpan di perangkat ini."}
       </p>
       <div className="chips">
         <button className="pill" onClick={() => setPanel("spend")}>💸 Catat pengeluaran</button>

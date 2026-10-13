@@ -1,3 +1,5 @@
+import type { VillageSync } from "@/lib/village-sync";
+
 /**
  * Tipe & aturan "game" yang dipakai bersama server (snapshot) dan client (desa 3D).
  * Semua angka uang dalam Rupiah bulat (sama seperti kolom Int di skema tepira).
@@ -141,6 +143,12 @@ export interface Snapshot {
     debts: number;
     netWorth: number;
   };
+  /**
+   * Data desa per user yang ikut pindah antar perangkat (tanda nol pengeluaran, batas jajan, surat
+   * terbaca, perayaan, tur), dibaca dari NoSpendDay / PlaceSpendLimit / VillageState. available:false =
+   * tabelnya belum ada atau desa contoh: desa jalan dari perangkat ini saja (lihat lib/village-sync.ts).
+   */
+  sync: VillageSync;
   pinRequired: boolean;
   devLogin: boolean;
   generatedAt: string;

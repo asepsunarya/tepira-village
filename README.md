@@ -6,9 +6,11 @@ Versi **interaktif & cozy** dari [tepira.id](https://github.com/asepsunarya/tepi
 tempat setiap goal tabungan jadi bangunan yang tumbuh tiap kamu menyetor. Pengeluaran tercatat di warung,
 dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pulau.
 
-> Repo ini **memakai backend tepira yang sama** (database Postgres + login Google yang sama). Tidak ada
-> perubahan apa pun yang dibutuhkan di repo tepira. Data yang tampil di sini = data yang tampil di tepira.id,
-> dan sebaliknya.
+> Repo ini **memakai backend tepira yang sama** (database Postgres + login Google yang sama). Data yang tampil
+> di sini = data yang tampil di tepira.id, dan sebaliknya. Skema & migrasi tetap milik repo tepira: kolom/tabel
+> yang hanya dipakai desa (tempat pengeluaran, data desa yang sinkron antar perangkat) juga dibuat lewat migrasi
+> di sana, jadi **migrasinya harus jalan di produksi sebelum desa di-deploy** (lihat
+> [Sinkron antar perangkat](#sinkron-antar-perangkat)).
 
 ## Konsep "game"
 
@@ -30,7 +32,9 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | —                             | Lampu jalan streak: satu per hari tercatat (7 hari terakhir); tiap 7 hari beruntun satu warga pindah ke desa |
 | —                             | Musim pulau ikut bulan yang dilihat (hujan, panen, kemarau, mangga) + 📔 jurnal tahun ini "hari ke-N dari 365" |
 
-Level, XP, streak, dan warga dihitung di client dari data yang sudah ada (tidak menambah tabel baru).
+Level, XP, streak, dan warga dihitung di client dari data yang sudah ada. Yang ditambahkan desa sendiri (tanda nol
+pengeluaran, warga/level yang sudah dirayakan, surat terbaca, progres tur, batas jajan) tersimpan di akun dan ikut ke
+perangkat lain, lihat [Sinkron antar perangkat](#sinkron-antar-perangkat).
 
 ## Loop harian
 
@@ -52,8 +56,8 @@ Supaya desa punya alasan dibuka setiap hari, bukan hanya saat menabung:
 - **Surat mingguan.** Insight terbaru dari tabel `WeeklyFinancialInsight` (cron tepira tiap Senin 08:00 WIB) sampai
   bulan yang dilihat. Akun tanpa insight tersimpan mendapat pratinjau dari angka bulan itu, sama seperti "Preview
   bulan ini" di halaman Laporan tepira (kalimatnya port dari `buildCyreneInsight`).
-- **Perayaan.** Warga baru dan bangunan yang baru terbuka dirayakan sekali (notifikasi + toast di lokasinya),
-  termasuk yang bertambah sejak kunjungan terakhir.
+- **Perayaan.** Warga baru dan bangunan yang baru terbuka dirayakan sekali per akun (notifikasi + toast di lokasinya),
+  termasuk yang bertambah sejak kunjungan terakhir. Yang sudah dirayakan di HP tidak dirayakan lagi di laptop.
 
 ## Jurnal tahun & musim pulau
 
@@ -78,8 +82,8 @@ pergantian berikutnya ("Musim hujan mulai 1 Nov, 19 hari lagi"), pita 12 bulan (
 kebiasaan 12×31 dari hari tercatat + tanda nol pengeluaran (hari sebelum catatan pertama dalam 400 hari terakhir = "belum ada
 data", tidak dihitung terlewat), dan
 angka tahun ini: hari tercatat, deret terpanjang & sekarang (sejak 1 Januari), goal dibuat, warga, level. Dibuka dari label bulan di kontrol
-atas (emoji musim di atasnya), chip di 🏝️ Perkembangan desa, atau pojok musim di samping Balai Desa. Tanpa query baru:
-datanya `activityDays` (400 hari) yang sudah dikirim untuk lampu streak.
+atas (emoji musim di atasnya), chip di 🏝️ Perkembangan desa, atau pojok musim di samping Balai Desa. Tanpa query tambahan:
+datanya `activityDays` (400 hari) dan tanda nol pengeluaran (`snapshot.sync`) yang sudah dikirim untuk lampu streak.
 
 ## Catat cepat
 
@@ -198,13 +202,61 @@ Kanvas **🌊 Aliran uang** layar penuh menggambar uang bulan yang dilihat sebag
   - Statusnya tampil di penanda peta, baris sidebar, label kios, panel Bulan ini, dan catat cepat. Contoh:
     chip 📍 berubah kuning/merah dan muncul "nominal ini bikin lewat".
   - Saat sebuah catatan menaikkan statusnya, muncul pemberitahuan tanpa menyebut nominal.
-- **Penyimpanan.** Batas disimpan per user di `localStorage` (`daily.ts`, kunci `tepira-village-placelimits:v1:<email>`).
-  Batas belum ikut ke perangkat lain dan tidak butuh migrasi. Sinkronisasi nanti butuh tabel baru di repo tepira.
+- **Penyimpanan.** Satu baris `PlaceSpendLimit` per tempat (kunci = nama yang dinormalkan), jadi batas ikut ke
+  perangkat lain dan mengubah batas "Kopi" di HP tidak menimpa batas "Bakso" yang baru diatur di laptop. Maksimal 50
+  tempat: tempat ke-51 ditolak dengan pesan (dulu yang paling lama dibuang diam-diam).
 
-Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server hanya
-mengirim daftar hari yang punya catatan (`activityDays`, 400 hari terakhir). Tanda nol pengeluaran (hari ini dan
-2 hari sebelumnya), surat yang sudah dibuka, dan warga/level yang sudah dirayakan disimpan per user di
-`localStorage` (`components/village/daily.ts`), jadi belum ikut pindah antar perangkat.
+Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server mengirim
+daftar hari yang punya catatan (`activityDays`, 400 hari terakhir) dan tanda nol pengeluaran (`snapshot.sync.noSpend`,
+jendela yang sama). Menandai nol pengeluaran hanya untuk hari ini dan 2 hari sebelumnya; membatalkan boleh kapan saja.
+
+## Sinkron antar perangkat
+
+Data desa yang dulu hanya ada di `localStorage` sekarang tersimpan di akun, jadi lampu, perayaan, surat, tur, dan batas
+jajan sama di HP dan laptop. Tabelnya milik migrasi tepira (`prisma/schema.prisma` disalin dari sana), semuanya
+ber-`userId` NOT NULL (query dengan `{ userId }` biasa, bukan `userOwnedWhere`):
+
+| Data                         | Tabel                                   | Aturan kalau dua perangkat mengubah                                      |
+| ---------------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
+| Tanda nol pengeluaran        | `NoSpendDay` (satu baris per hari WIB, `DATE`) | Tandai = `createMany skipDuplicates` (hari ini..2 hari lalu), batal = `deleteMany`. Hari berbeda tidak saling menimpa |
+| Batas jajan per tempat       | `PlaceSpendLimit` (satu baris per tempat) | Per tempat, yang terakhir sampai menang; hapus = hapus sungguhan; maks 50 |
+| Surat terakhir dibuka        | `VillageState` kunci `letter`           | Yang terakhir menang                                                     |
+| Warga & level yang dirayakan | `VillageState` kunci `seen`             | Maksimum per angka (`GREATEST` di SQL), tidak pernah turun               |
+| Progres tur                  | `VillageState` kunci `tour`             | Selesai/dilewati tidak ditimpa "lanjut langkah" dari perangkat lain; ❓ mengulang tur dengan sengaja |
+
+Yang **tetap per perangkat**: preferensi tampilan `tepira-village-ui` (jam/cuaca, label, sembunyikan angka, kunci kamera,
+suasana peta, efek musim) karena tergantung layar & tempat, dan PIN yang sudah dibuka (`sessionStorage`, per tab).
+
+Cara kerjanya (`lib/village-sync.ts` murni + tes, `lib/village-state.ts` di server, `components/village/daily.ts` di browser):
+
+- **Tanpa kedipan.** Data desa ikut di setiap snapshot (`snapshot.sync`), termasuk render pertama `/village`.
+- **Op kecil yang idempoten.** Klik lampu, ubah batas, buka surat, dan langkah tur dikirim sebagai op bernilai mutlak
+  (`{ nospend, day, on }`, bukan "toggle") lewat server action `syncVillage`, yang tidak membangun snapshot penuh. Op yang
+  terkirim dua kali (respons hilang, dua tab) aman.
+- **Outbox.** Op langsung tampil (tampilan = versi server + op yang belum dikonfirmasi, dihitung dengan fungsi yang sama
+  dengan server) dan menunggu di `localStorage` (`tepira-village-sync:v2:<email>`) sampai server mengonfirmasi. Offline
+  atau gagal: muncul sekali "Belum tersambung…", dicoba lagi 5 dtk → 60 dtk, saat kembali online, dan saat halaman dibuka lagi.
+- **Perubahan dari perangkat lain** datang lewat snapshot aksi apa pun (termasuk ganti bulan) dan tarikan saat tab kembali
+  dilihat / online (paling sering 30 dtk sekali). Tab lain di browser yang sama ikut lewat event `storage`.
+- **Impor sekali per perangkat.** Pertama kali dibuka setelah rilis ini, isi kunci lama (`tepira-village-nospend|seen|letter|
+  placelimits|tour:v1:<email>`) dikirim sebagai satu op impor: hari nol digabung (tanpa batas 2 hari, dalam 400 hari),
+  batas yang sudah ada di akun menang, surat hanya kalau akun belum punya, perayaan maksimum, tur selesai mengalahkan yang
+  aktif. Penandanya `tepira-village-synced:v1:<email>` (sidik jari isi kunci lama). Kunci lama tidak dihapus dulu, supaya
+  versi desa sebelumnya masih bisa dipakai kalau rilis dibatalkan.
+- **Desa contoh di landing** tidak pernah mengirim apa pun (`snapshot.sync.available = false`, dicek juga di store).
+
+**Jaring urutan rilis.** Kalau desa ter-deploy sebelum migrasi tepira jalan, tabel di atas belum ada: membaca tabel baru
+mengembalikan data kosong + `available: false` (`isMissingTable` di `lib/db-missing.ts`: Prisma `P2021`/`P2022`, atau
+Postgres `42P01`/`42703` dari SQL mentah), desa jalan dari salinan di browser seperti dulu, dan op menunggu di outbox. Begitu
+tabelnya ada, op itu terkirim sendiri. Selama tabelnya belum ada, server tidak menanyakannya lagi selama 60 dtk (log tidak
+banjir). Urutan rilis yang benar tetap:
+
+1. Merge PR skema di tepira (`20261014090000_add_village_sync_recurring_push`), lalu `npm run migrate:deploy` di sana dengan
+   `DATABASE_URL` produksi.
+2. Baru deploy desa.
+
+Untuk server/cron: `hasNoSpendMark(userId, day)` dan `noSpendMarkedUserIds(userIds, day)` di `lib/village-state.ts` menjawab
+"hari WIB ini ditandai nol pengeluaran?" (tabel belum ada = `false`). Tanda yang masih di outbox browser (offline) belum terlihat.
 
 ## Arsitektur
 
@@ -214,7 +266,8 @@ app/
   landing.css             gaya landing & login, di-scope ke .lp (body tetap overflow:hidden untuk /village)
   login/page.tsx          login Google (Auth.js v5), opsional dev-login
   village/page.tsx        server component: auth + buildSnapshot → <VillageApp/>
-  village/actions.ts      server actions: nabung, catat pengeluaran, goal (+ target tanggal), dompet, alokasi gaji (semua balikin snapshot baru)
+  village/actions.ts      server actions: nabung, catat pengeluaran, goal (+ target tanggal), dompet, alokasi gaji (semua balikin snapshot baru);
+                          syncVillage (op data desa, balikin snapshot.sync saja)
   api/auth/[...nextauth]  handler Auth.js
 lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
@@ -229,13 +282,16 @@ lib/
                           belanja per nama tempat (spendByPlaceName)
   place-limits.ts         batas jajan per tempat: parse/simpan, status aman/hampir/lewat
   kiosks.ts               pemilihan kios tempat langganan, slot stabil (hash), keramaian
+  village-sync.ts         data desa per user (murni): bentuk data, op idempoten + aturan gabung, outbox ringkas, impor kunci v1
+  village-state.ts        (server) baca/tulis NoSpendDay, PlaceSpendLimit, VillageState; hasNoSpendMark untuk cron
+  db-missing.ts           jaring urutan rilis: isMissingTable, readOrMissing, pesan ramah kalau tabel baru belum ada
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
 components/village/
-  store.ts                zustand: snapshot dari server + preferensi visual (localStorage)
-  daily.ts                localStorage per user: tanda nol pengeluaran, surat terbaca, perayaan yang sudah tampil,
-                          batas jajan per tempat
+  store.ts                zustand: snapshot dari server, data desa (base + outbox → tampilan), preferensi visual (localStorage)
+  daily.ts                salinan data desa di browser: outbox op yang belum terkirim, versi server terakhir (untuk tab
+                          lain), impor sekali dari kunci v1; letterKey surat mingguan
   kiosks.ts, usePlaces.ts kios yang berdiri untuk snapshot ini; hook belanja per tempat, status batas, kios
   geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
   speech.ts               🎤 Web Speech (SpeechRecognition id-ID): dukungan browser, hook mendengar, pesan galat
@@ -251,7 +307,7 @@ components/village/
                           Surat), JajanView (peta jajan layar penuh), PlaceLimit (editor & petunjuk batas jajan),
                           SalaryPanel, PlacePicker, PinGate, Tutorial, AliranView (aliran uang layar penuh),
                           VoiceButton (🎤 catat cepat), JournalPanel (📔 jurnal tahun ini)
-  tutorial/               langkah & progres tur pengguna baru (localStorage per user)
+  tutorial/               langkah tur pengguna baru; baseline & hitungan aksi per tab (status tur tersimpan di akun)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
 public/brand/             mark.svg, mark-small.svg (= favicon.svg), app-icon.svg (sumber apple-touch-icon & icon-192/512)
@@ -260,7 +316,8 @@ prisma/schema.prisma      SALINAN skema tepira — repo ini tidak punya migrasi 
 
 Alur data: halaman `/village` dirender di server dengan snapshot awal → client menyimpan di zustand → setiap aksi
 memanggil server action yang menulis ke DB **dengan aturan yang sama persis dengan tepira** lalu mengembalikan
-snapshot terbaru, sehingga desa langsung ter-update dalam satu round-trip.
+snapshot terbaru, sehingga desa langsung ter-update dalam satu round-trip. Data desa (lampu nol, batas jajan, surat,
+perayaan, tur) lewat jalur ringan: tampil seketika dari outbox, lalu `syncVillage` di belakang layar.
 
 ## Menjalankan
 
@@ -309,7 +366,9 @@ npm run seed:dev         # data contoh: 4 goal (1 telat jadwal, 1 lebih cepat), 
 npm run dev              # /login → tombol "Dev login (tanpa Google)"
 ```
 
-Jangan pernah menjalankan `db:push:dev` ke database produksi; skema & migrasi dimiliki repo tepira.
+Jangan pernah menjalankan `db:push:dev` ke database produksi; skema & migrasi dimiliki repo tepira. Lupa `db:push:dev`
+setelah menyalin skema baru? Desa tetap jalan dalam mode lokal (data desa hanya di browser, peringatan `[desa] tabel … belum
+ada` di log server) sampai tabelnya dibuat.
 
 ### Build & deploy
 
@@ -347,8 +406,9 @@ tidak menangkap klik).
   **dan** belum punya satu pun goal/dompet/pengeluaran/gaji/bonus/saldo awal dengan `userId` miliknya. Baris lama tanpa
   pemilik (`userId` null) sengaja tidak dihitung karena terlihat oleh semua akun.
 
-- Progres disimpan per user di `localStorage` (`tepira-village-tour:v1:<email>` → `{ status, step }`), **bukan** di
-  database. Tur yang belum selesai dilanjutkan saat reload; user lama tidak pernah dimulai otomatis.
+- Progres (`{ status, step }`) tersimpan di akun (`VillageState` kunci `tour`). Tur yang belum selesai dilanjutkan saat
+  reload atau di perangkat lain; tur yang sudah selesai/dilewati di HP tidak muncul lagi di laptop (dan tur yang sedang
+  jalan di tab lain ikut ditutup). User lama tidak pernah dimulai otomatis.
 - Tombol ❓ di kartu kiri atas mengulang tur kapan saja. `Esc` menutup tur (kecuali saat mengetik di kolom isian),
   `Enter`/`→` = Lanjut di langkah info.
 - Kalau `APP_PIN` aktif, tur baru muncul setelah PIN dibuka.

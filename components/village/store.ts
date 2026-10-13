@@ -2,15 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import {
-  NOSPEND_BACKFILL_DAYS,
-  VILLAGE_UNLOCKS,
-  VILLAGER_NAMES,
-  computeStreak,
-  levelFor,
-  villageXp,
-  wibDay
-} from "@/lib/game";
+import { VILLAGE_UNLOCKS, VILLAGER_NAMES, computeStreak, levelFor, villageXp, wibDay } from "@/lib/game";
 import type { ActionResult, Snapshot } from "@/lib/game";
 import * as actions from "@/app/village/actions";
 import type { MapThemeSetting, Panel, TimeOfDay, VillagerTarget, WorldToast } from "./types";
@@ -22,6 +14,8 @@ import {
   LIMIT_EMOJI,
   LIMIT_RANK,
   LIMIT_WORD,
+  MAX_LIMIT,
+  MAX_PLACE_LIMITS,
   NO_LIMITS,
   findPlaceLimit,
   limitStatus,
@@ -29,24 +23,31 @@ import {
   type PlaceLimits
 } from "@/lib/place-limits";
 import {
-  PLACE_LIMITS_PREFIX,
-  readLetter,
-  readNoSpend,
-  readPlaceLimits,
-  readSeen,
-  writeLetter,
-  writeNoSpend,
-  writePlaceLimits,
-  writeSeen
-} from "./daily";
+  LOCAL_SYNC,
+  MAX_OPS_PER_CALL,
+  MAX_PLACE_NAME,
+  cleanPlaceName,
+  deriveView,
+  isTerminalTour,
+  newerSync,
+  noSpendAllowed,
+  sameNumberList,
+  samePlaceLimits,
+  sameSeen,
+  sameStoredTour,
+  type Seen,
+  type StoredTour,
+  type SyncOp,
+  type SyncOpInput,
+  type VillageSync
+} from "@/lib/village-sync";
+import { SYNC_PREFIX, prepareOutbox, readSyncCache, updateSyncCache } from "./daily";
 import { placedKiosks } from "./kiosks";
 import {
   NO_HITS,
   captureBaseline,
   clampTourStep,
-  readTour,
   tourOwner,
-  writeTour,
   type TourBaseline,
   type TourHits,
   type TourStatus
@@ -67,7 +68,7 @@ export interface UiSettings {
   reduceFx?: boolean;
 }
 
-/** Tur desa (coach mark) untuk pengguna baru. Progres per user di localStorage, bukan di DB. */
+/** Tur desa (coach mark) untuk pengguna baru. Status & langkah tersimpan di akun (storedTour), sisanya per tab. */
 export interface TourState {
   /** email pemilik progres; null = belum diinisialisasi */
   owner: string | null;
@@ -94,12 +95,24 @@ interface State {
   villagerTarget: VillagerTarget | null;
   viewNonce: number;
   celebrateGoalId: number | null;
-  /** Hari "nol pengeluaran" (hari WIB) milik user yang login; disimpan di browser (daily.ts). */
+  /**
+   * Data desa per user versi server terakhir yang diketahui tab ini (snapshot.sync atau hasil
+   * syncVillage). Bukan untuk ditampilkan: tampilannya noSpendDays…storedTour di bawah.
+   */
+  syncBase: VillageSync;
+  /** Op yang belum dikonfirmasi server (cermin outbox di localStorage, daily.ts). */
+  syncOutbox: SyncOp[];
+  // Tampilan = deriveView(syncBase, syncOutbox): perubahan langsung terlihat walau belum terkirim.
+  /** Hari "nol pengeluaran" (hari WIB) milik user yang login. */
   noSpendDays: number[];
   /** Kunci surat terakhir yang sudah dibuka (letterKey di daily.ts). */
   letterRead: string | null;
-  /** Batas jajan per tempat milik user yang login; disimpan di browser (daily.ts). */
+  /** Batas jajan per tempat milik user yang login. */
   placeLimits: PlaceLimits;
+  /** Warga & level yang sudah dirayakan; null = belum pernah. */
+  seen: Seen | null;
+  /** Progres tur yang tersimpan di akun. */
+  storedTour: StoredTour | null;
   /** Tempat yang disorot saat peta jajan dibuka (kunci titik `n:<nama>`), mis. dari klik kios. */
   jajanFocus: string | null;
   /** Kios yang sedang disorot kursor (labelnya melebar menampilkan nama). */
@@ -141,8 +154,10 @@ interface State {
   markLetterRead: (key: string) => void;
   /** Pasang/ganti (rupiah per bulan) atau hapus (null) batas jajan sebuah tempat. */
   setPlaceLimit: (name: string, limit: number | null) => void;
-  /** Baca ulang batas dari storage (perubahan dari tab lain). */
-  reloadPlaceLimits: () => void;
+  /** Kirim outbox / tarik perubahan dari perangkat lain (tab kembali dilihat, kembali online). */
+  syncNow: () => Promise<void>;
+  /** Baca ulang outbox & versi server dari storage (perubahan dari tab lain). */
+  reloadSyncCache: () => void;
   /** Buka peta jajan, opsional langsung menyorot satu tempat. */
   openJajan: (placeName?: string | null) => void;
   setHoverKiosk: (key: string | null) => void;
@@ -155,15 +170,40 @@ interface State {
    * menilai akun ini baru (lihat isNewVillager di lib/snapshot.ts).
    */
   initTour: (isNew: boolean) => void;
-  /** Mulai/lompat ke langkah tertentu (baseline diambil ulang). */
-  startTour: (step?: number) => void;
+  /**
+   * Mulai/lompat ke langkah tertentu (baseline diambil ulang). restart = tur diulang dengan sengaja
+   * (tombol ❓): menimpa status selesai/dilewati di akun. Tanpa itu, tur yang sudah ditutup di
+   * perangkat lain menang dan tur di tab ini ikut ditutup.
+   */
+  startTour: (step?: number, restart?: boolean) => void;
   setTourPage: (page: number) => void;
   /** Ambil ulang baseline, mis. setelah pindah bulan. */
   rebaseTour: () => void;
   endTour: (status: Exclude<TourStatus, "active">) => void;
 }
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+const uid = () => Math.random().toString(36).slice(2, 10) || "0";
+
+type SyncView = Pick<
+  State,
+  "syncBase" | "syncOutbox" | "noSpendDays" | "letterRead" | "placeLimits" | "seen" | "storedTour"
+>;
+
+/** Data desa kosong tanpa server (landing / desa contoh). */
+export const NO_SYNC_VIEW: SyncView = {
+  syncBase: LOCAL_SYNC,
+  syncOutbox: [],
+  noSpendDays: [],
+  letterRead: null,
+  placeLimits: NO_LIMITS,
+  seen: null,
+  storedTour: null
+};
+
+/** Jeda kirim ulang setelah gagal: 5 dtk → 10 → 20 → 40 → 60 (lalu menunggu tab dilihat / online lagi). */
+const RETRY_MS = [5_000, 10_000, 20_000, 40_000, 60_000];
+/** Tarik perubahan perangkat lain paling sering sekali per ini saat tab kembali dilihat. */
+const PULL_EVERY_MS = 30_000;
 
 export const useVillage = create<State>()(
   persist(
@@ -186,20 +226,148 @@ export const useVillage = create<State>()(
         const now = new Date();
         return s ? s.period : { month: now.getMonth() + 1, year: now.getFullYear() };
       };
+      // ── Data desa yang sinkron antar perangkat (lib/village-sync.ts) ──────────
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      let inflight = false;
+      let again = false;
+      let failures = 0;
+      let lastContact = 0;
+      const today = () => wibDay(Date.now());
+
+      /** Tampilan dari base + outbox; objek lama dipakai ulang kalau isinya sama (hindari render & memo ulang). */
+      const syncView = (base: VillageSync, outbox: SyncOp[]): SyncView => {
+        const v = deriveView(base, outbox, today());
+        const cur = get();
+        return {
+          syncBase: base,
+          syncOutbox: outbox,
+          noSpendDays: sameNumberList(cur.noSpendDays, v.noSpend) ? cur.noSpendDays : v.noSpend,
+          letterRead: v.letter,
+          placeLimits: samePlaceLimits(cur.placeLimits, v.placeLimits) ? cur.placeLimits : v.placeLimits,
+          seen: sameSeen(cur.seen, v.seen) ? cur.seen : v.seen,
+          storedTour: sameStoredTour(cur.storedTour, v.tour) ? cur.storedTour : v.tour
+        };
+      };
+      /** Tur yang sedang jalan di tab ini sudah selesai/dilewati di perangkat lain: ikut ditutup. */
+      const closeFinishedTour = () => {
+        const { tour, storedTour, snapshot } = get();
+        if (!tour.active || !snapshot || tour.owner !== tourOwner(snapshot) || !isTerminalTour(storedTour)) return;
+        set({ tour: { ...tour, active: false, page: 0, baseline: null } });
+        notify("Tur desa sudah ditutup di perangkat lain.");
+      };
+      const setSync = (base: VillageSync, outbox: SyncOp[]) => {
+        set(syncView(base, outbox));
+        closeFinishedTour();
+      };
+      const scheduleFlush = (ms: number) => {
+        clearTimeout(flushTimer);
+        flushTimer = setTimeout(() => void flush(), ms);
+      };
+      /** Setelah base/outbox berganti: kirim yang tersisa kalau server siap. */
+      const afterSync = () => {
+        closeFinishedTour();
+        if (get().syncOutbox.length && get().syncBase.available) scheduleFlush(0);
+      };
+
+      /** Data desa milik pemilik snapshot ini, mulai dari server (atau salinan terakhir kalau tabelnya belum ada). */
+      const freshSync = (snapshot: Snapshot): SyncView => {
+        if (isDemoSnapshot(snapshot)) return NO_SYNC_VIEW;
+        const owner = tourOwner(snapshot);
+        const outbox = prepareOutbox(owner, uid(), today());
+        let base = snapshot.sync;
+        if (base.available) {
+          updateSyncCache(owner, today(), (c) => ({ ...c, base }));
+        } else {
+          // Migrasi tepira belum jalan (atau sempat dibatalkan): pakai salinan terakhir dari server.
+          const cached = readSyncCache(owner, today()).base;
+          if (cached) base = { ...cached, available: false };
+        }
+        return syncView(base, outbox);
+      };
+      /** Sync yang ikut di snapshot hasil aksi: diterima kalau tidak lebih lama dari yang sudah ada. */
+      const incomingSync = (sync: VillageSync): Partial<SyncView> => {
+        const cur = get().syncBase;
+        if (!sync.available) return cur.available ? syncView({ ...cur, available: false }, get().syncOutbox) : {};
+        const next = newerSync(cur, sync);
+        return next === cur ? {} : syncView(next, get().syncOutbox);
+      };
+
+      /** Satu perubahan data desa: tampil seketika, tersimpan di outbox, dikirim sebentar lagi. */
+      const enqueue = (input: SyncOpInput) => {
+        const s = get().snapshot;
+        if (!s || isDemoSnapshot(s)) return; // desa contoh TIDAK PERNAH menulis
+        const op = { ...input, id: uid() } as SyncOp;
+        const cache = updateSyncCache(tourOwner(s), today(), (c) => ({ ...c, outbox: [...c.outbox, op] }));
+        setSync(get().syncBase, cache.outbox); // sinkron: efek LetterPanel tidak berulang
+        if (get().syncBase.available) scheduleFlush(300); // gabungkan klik beruntun
+      };
+
+      const flush = async (): Promise<void> => {
+        clearTimeout(flushTimer);
+        const s = get().snapshot;
+        if (!s || isDemoSnapshot(s)) return;
+        if (inflight) {
+          again = true;
+          return;
+        }
+        const owner = tourOwner(s);
+        // Termasuk op dari tab lain (terkirim dua kali tidak apa-apa: semua op idempoten).
+        const ops = readSyncCache(owner, today()).outbox.slice(0, MAX_OPS_PER_CALL);
+        inflight = true;
+        let retryIn = 0;
+        try {
+          const res = await actions.syncVillage(owner, ops); // ops kosong = tarik saja
+          lastContact = Date.now();
+          const now = get().snapshot;
+          if (!now || isDemoSnapshot(now) || tourOwner(now) !== owner) return; // akun berganti selama request
+          if (!res.ok) {
+            if (res.code === "error") throw new Error(res.message);
+            // "missing": tabel belum ada, tetap jalan lokal (outbox disimpan sampai server siap).
+            // "owner": sesi milik akun lain; op tetap di outbox sampai akun ini login lagi.
+            again = false;
+            const base = get().syncBase;
+            if (res.code === "missing" && base.available) setSync({ ...base, available: false }, get().syncOutbox);
+            return;
+          }
+          failures = 0;
+          const sent = new Set(ops.map((o) => o.id));
+          // Satu tulis: base baru + op terkonfirmasi dibuang, tab lain menerima keduanya sekaligus.
+          const cache = updateSyncCache(owner, today(), (c) => ({
+            base: res.sync,
+            outbox: c.outbox.filter((o) => !sent.has(o.id))
+          }));
+          setSync(newerSync(get().syncBase, res.sync), cache.outbox);
+          if (cache.outbox.length) again = true; // lebih dari MAX_OPS_PER_CALL, atau op baru selama request
+        } catch {
+          failures += 1;
+          if (failures === 1 && ops.length) notify("Belum tersambung. Perubahan disimpan di perangkat ini dulu, nanti dikirim.");
+          retryIn = failures <= RETRY_MS.length ? RETRY_MS[failures - 1] : 0;
+          again = false;
+        } finally {
+          inflight = false;
+          if (again) {
+            again = false;
+            scheduleFlush(0);
+          } else if (retryIn) {
+            scheduleFlush(retryIn);
+          }
+        }
+      };
+
       const apply = (result: ActionResult) => {
         if (result.ok) {
           const prev = get().snapshot;
-          // Akun berganti di tab lain lalu tab ini memuat ulang data: ambil data browser milik akun baru.
+          // Akun berganti di tab lain lalu tab ini memuat ulang data: ambil data desa milik akun baru.
           const owner = tourOwner(result.snapshot);
           const switched = prev !== null && !isDemoSnapshot(prev) && tourOwner(prev) !== owner;
+          lastContact = Date.now();
           set({
             snapshot: result.snapshot,
             loading: false,
             error: null,
-            ...(switched
-              ? { placeLimits: readPlaceLimits(owner), noSpendDays: readNoSpend(owner), letterRead: readLetter(owner) }
-              : {})
+            ...(switched ? freshSync(result.snapshot) : incomingSync(result.snapshot.sync))
           });
+          afterSync();
           celebrateSoon();
           return true;
         }
@@ -225,17 +393,17 @@ export const useVillage = create<State>()(
 
       /**
        * Rayakan warga baru & bangunan level yang baru terbuka, sekali per user: yang sudah dirayakan
-       * diingat di browser. Pertama kali (belum ada catatan) hanya mencatat diam-diam.
+       * tersimpan di akun (seen), jadi tidak dirayakan ulang di perangkat lain. Pertama kali (belum
+       * ada catatan) hanya mencatat diam-diam.
        */
       const celebrate = () => {
         const s = get().snapshot;
-        if (!s) return;
-        const owner = tourOwner(s);
+        if (!s || isDemoSnapshot(s)) return;
         const villagers = computeStreak(s.activityDays, get().noSpendDays, wibDay(Date.now())).villagers;
         const level = levelFor(villageXp(s.totals.totalSaved, s.totals.contributionCount));
-        const seen = readSeen(owner);
+        const seen = get().seen;
         if (!seen) {
-          writeSeen(owner, { villagers, level });
+          enqueue({ t: "seen", villagers, level });
           return;
         }
         const news: string[] = [];
@@ -252,7 +420,7 @@ export const useVillage = create<State>()(
         if (news.length) notify(news.join(" "));
         // Yang sempat berkurang (mis. setoran dihapus) tidak dirayakan ulang saat naik lagi.
         if (villagers > seen.villagers || level > seen.level) {
-          writeSeen(owner, { villagers: Math.max(villagers, seen.villagers), level: Math.max(level, seen.level) });
+          enqueue({ t: "seen", villagers: Math.max(villagers, seen.villagers), level: Math.max(level, seen.level) });
         }
       };
       /** Ditunda sebentar supaya pesan aksinya ("setoran tercatat" dst.) sempat terbaca dulu. */
@@ -272,9 +440,7 @@ export const useVillage = create<State>()(
         villagerTarget: null,
         viewNonce: 0,
         celebrateGoalId: null,
-        noSpendDays: [],
-        letterRead: null,
-        placeLimits: NO_LIMITS,
+        ...NO_SYNC_VIEW,
         jajanFocus: null,
         hoverKiosk: null,
         tour: IDLE_TOUR,
@@ -283,14 +449,11 @@ export const useVillage = create<State>()(
         hydrate: (snapshot) => {
           const unlockedBefore =
             typeof window !== "undefined" && sessionStorage.getItem("tepira_village_unlocked") === "true";
-          const owner = tourOwner(snapshot);
-          set({
-            snapshot,
-            unlocked: snapshot.pinRequired ? unlockedBefore : true,
-            noSpendDays: readNoSpend(owner),
-            letterRead: readLetter(owner),
-            placeLimits: readPlaceLimits(owner)
-          });
+          lastContact = Date.now();
+          // Data desa dari server ikut di snapshot halaman (tanpa kedipan lampu kosong); data v1 di
+          // browser ini diimpor sekali lewat outbox sebelum celebrate & initTour membacanya.
+          set({ snapshot, unlocked: snapshot.pinRequired ? unlockedBefore : true, ...freshSync(snapshot) });
+          afterSync();
           // Warga/bangunan yang bertambah sejak kunjungan terakhir (mis. mencatat lewat tepira.id).
           setTimeout(celebrate, 900);
         },
@@ -301,24 +464,38 @@ export const useVillage = create<State>()(
         setHoverKiosk: (hoverKiosk) => set({ hoverKiosk }),
         setPlaceLimit: (name, limit) => {
           const s = get().snapshot;
-          if (!s || isDemoSnapshot(s) || !normalizePlaceName(name)) return;
-          // Mulai dari isi storage milik pemilik yang ditulis (bukan state di memori yang bisa saja
-          // milik akun sebelumnya di tab yang sama).
-          const owner = tourOwner(s);
-          const base = readPlaceLimits(owner);
-          const next = withPlaceLimit(base, name, limit);
-          if (next === base) {
-            set({ placeLimits: base });
+          const clean = cleanPlaceName(name);
+          if (!s || isDemoSnapshot(s) || !normalizePlaceName(clean)) return;
+          const value = limit === null || !(limit > 0) ? null : Math.round(limit);
+          if (value !== null && value > MAX_LIMIT) return;
+          if (clean.length > MAX_PLACE_NAME) {
+            fail("Nama tempat terlalu panjang untuk diberi batas jajan.");
             return;
           }
-          set({ placeLimits: writePlaceLimits(owner, next) });
+          const current = get().placeLimits;
+          const next = withPlaceLimit(current, clean, value);
+          if (next === current) return;
+          // Tempat lama tidak pernah digusur diam-diam (dulu yang paling lama dibuang).
+          if (Object.keys(next).length > MAX_PLACE_LIMITS) {
+            fail(`Batas jajan maksimal ${MAX_PLACE_LIMITS} tempat. Hapus salah satu dulu, ya.`);
+            return;
+          }
+          // Satu op per tempat: perubahan tempat lain dari perangkat lain tidak ikut tertimpa.
+          enqueue({ t: "limit", name: clean, limit: value });
           // Tanpa nominal: pesan ini tampil juga saat angka disembunyikan.
-          notify(limit ? `🎯 Batas jajan ${name.trim()} disimpan.` : `Batas jajan ${name.trim()} dihapus.`);
+          notify(value ? `🎯 Batas jajan ${clean} disimpan.` : `Batas jajan ${clean} dihapus.`);
         },
-        reloadPlaceLimits: () => {
+        syncNow: async () => {
           const s = get().snapshot;
           if (!s || isDemoSnapshot(s)) return;
-          set({ placeLimits: readPlaceLimits(tourOwner(s)) });
+          const pending = get().syncOutbox.length > 0 && get().syncBase.available;
+          if (pending || Date.now() - lastContact > PULL_EVERY_MS) await flush();
+        },
+        reloadSyncCache: () => {
+          const s = get().snapshot;
+          if (!s || isDemoSnapshot(s)) return;
+          const c = readSyncCache(tourOwner(s), today());
+          setSync(c.base ? newerSync(get().syncBase, c.base) : get().syncBase, c.outbox);
         },
         openGoal: (goalId) => set({ selectedGoalId: goalId, panel: goalId ? "goals" : get().panel }),
         openWallet: (walletId) => set({ selectedWalletId: walletId, panel: walletId ? "wallets" : get().panel }),
@@ -508,25 +685,23 @@ export const useVillage = create<State>()(
 
         toggleNoSpend: (day) => {
           const s = get().snapshot;
-          if (!s) return;
-          const today = wibDay(Date.now());
-          const current = get().noSpendDays;
-          const had = current.includes(day);
-          // Membatalkan selalu boleh; menandai hanya dalam batas mundur.
-          if (!had && (day > today || day < today - NOSPEND_BACKFILL_DAYS)) return;
-          const days = writeNoSpend(tourOwner(s), had ? current.filter((d) => d !== day) : [...current, day], today);
-          set({ noSpendDays: days });
+          if (!s || isDemoSnapshot(s)) return;
+          const now = today();
+          const had = get().noSpendDays.includes(day);
+          // Membatalkan selalu boleh; menandai hanya dalam batas mundur (server memakai aturan yang sama).
+          if (!had && !noSpendAllowed(day, now)) return;
+          // Nilai mutlak, bukan "toggle": aman terkirim dua kali.
+          enqueue({ t: "nospend", day, on: !had });
           if (had) return;
-          const lamp = LAMP_POSTS[6 - (today - day)];
+          const lamp = LAMP_POSTS[6 - (now - day)];
           if (lamp) pushToast({ x: lamp[0], z: lamp[1], y: 3.4, text: "💡", sub: "Nol pengeluaran", tone: "info" });
-          notify(day === today ? "🌙 Hari ini ditandai nol pengeluaran. Lampunya menyala!" : "🌙 Hari itu ditandai nol pengeluaran.");
+          notify(day === now ? "🌙 Hari ini ditandai nol pengeluaran. Lampunya menyala!" : "🌙 Hari itu ditandai nol pengeluaran.");
           celebrateSoon();
         },
         markLetterRead: (key) => {
           const s = get().snapshot;
-          if (!s || get().letterRead === key) return;
-          writeLetter(tourOwner(s), key);
-          set({ letterRead: key });
+          if (!s || isDemoSnapshot(s) || get().letterRead === key) return;
+          enqueue({ t: "letter", key });
         },
 
         initTour: (isNew) => {
@@ -534,24 +709,25 @@ export const useVillage = create<State>()(
           if (!s) return;
           const owner = tourOwner(s);
           if (get().tour.owner === owner) return;
-          const stored = readTour(owner);
+          const stored = get().storedTour;
           const hits = get().tourHits;
           if (stored?.status === "active") {
             set({ tour: { owner, active: true, step: stored.step, page: 0, baseline: captureBaseline(s, hits) } });
           } else if (!stored && isNew) {
-            writeTour(owner, { status: "active", step: 0 });
             set({ tour: { owner, active: true, step: 0, page: 0, baseline: captureBaseline(s, hits) } });
+            // Tanpa restart: kalau perangkat lain sudah menutup tur, yang itu menang.
+            enqueue({ t: "tour", status: "active", step: 0, restart: false });
           } else {
             set({ tour: { ...IDLE_TOUR, owner } });
           }
         },
-        startTour: (step = 0) => {
+        startTour: (step = 0, restart = false) => {
           const s = get().snapshot;
           if (!s) return;
           const owner = tourOwner(s);
           const next = clampTourStep(step);
-          writeTour(owner, { status: "active", step: next });
           set({ tour: { owner, active: true, step: next, page: 0, baseline: captureBaseline(s, get().tourHits) } });
+          enqueue({ t: "tour", status: "active", step: next, restart });
         },
         setTourPage: (page) => set((st) => ({ tour: { ...st.tour, page: Math.max(0, page) } })),
         rebaseTour: () => {
@@ -562,8 +738,11 @@ export const useVillage = create<State>()(
         endTour: (status) => {
           const { tour, snapshot } = get();
           if (!tour.active) return;
-          if (snapshot) writeTour(tour.owner ?? tourOwner(snapshot), { status, step: tour.step });
           set({ tour: { ...tour, active: false, page: 0, baseline: null } });
+          // Status pasti (selesai/dilewati) selalu menimpa; hanya untuk pemilik tur ini.
+          if (snapshot && (tour.owner ?? tourOwner(snapshot)) === tourOwner(snapshot)) {
+            enqueue({ t: "tour", status, step: tour.step, restart: false });
+          }
           notify(
             status === "done"
               ? "Tur selesai! Selamat menabung teu pira 🐷"
@@ -582,19 +761,24 @@ export const useVillage = create<State>()(
 
 // persist tidak mendengar tab lain: tanpa ini tab lama (mis. landing dengan demo yang terus
 // memanggil setState) menulis balik preferensi basi, termasuk mode sembunyikan angka.
+// Preferensi (ui) tetap per perangkat; data desa ikut tab lain lewat salinan sinkron (daily.ts).
+// Store ini juga dimuat di landing: syncNow & reloadSyncCache diam saja tanpa snapshot / untuk demo.
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
     try {
-      if (e.storageArea === window.localStorage && (e.key === "tepira-village-ui" || e.key === null)) {
-        void useVillage.persist.rehydrate();
-      }
-      if (e.storageArea === window.localStorage && (e.key === null || e.key.startsWith(PLACE_LIMITS_PREFIX))) {
-        useVillage.getState().reloadPlaceLimits();
-      }
+      if (e.storageArea !== window.localStorage) return;
+      if (e.key === "tepira-village-ui" || e.key === null) void useVillage.persist.rehydrate();
+      if (e.key === null || e.key.startsWith(SYNC_PREFIX)) useVillage.getState().reloadSyncCache();
     } catch {
       // storage diblokir: preferensi cukup diingat di tab ini
     }
   });
+  // Kembali ke tab / kembali online: kirim yang tertunda dan tarik perubahan dari perangkat lain.
+  const wake = () => {
+    if (document.visibilityState === "visible") void useVillage.getState().syncNow();
+  };
+  document.addEventListener("visibilitychange", wake);
+  window.addEventListener("online", wake);
 }
 
 /** Apakah angka boleh ditampilkan sekarang. */

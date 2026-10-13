@@ -18,7 +18,7 @@ export function useWibToday() {
 
 const NO_DAYS: number[] = [];
 
-/** Streak catatan harian + warga, dari snapshot dan tanda "nol pengeluaran" di browser. */
+/** Streak catatan harian + warga, dari snapshot dan tanda "nol pengeluaran" (tersimpan di akun). */
 export function useStreak() {
   const activity = useVillage((s) => s.snapshot?.activityDays ?? NO_DAYS);
   const noSpend = useVillage((s) => s.noSpendDays);

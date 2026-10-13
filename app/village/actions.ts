@@ -12,6 +12,9 @@ import {
 import { KNOWN_CATEGORY_LABELS, expenseCategories } from "@/lib/categories";
 import { roundCoord } from "@/lib/places";
 import type { ActionResult } from "@/lib/game";
+import { MISSING_TABLE_MESSAGE, isMissingTable } from "@/lib/db-missing";
+import { parseSyncOps, type SyncResult } from "@/lib/village-sync";
+import { applyVillageOps, loadVillageSync } from "@/lib/village-state";
 
 /**
  * Semua server action menulis ke database tepira dengan aturan yang sama
@@ -56,6 +59,36 @@ function assertAmount(amount: number, label = "Nominal") {
 
 export async function fetchSnapshot(period: Period): Promise<ActionResult> {
   return run(period, async () => {});
+}
+
+// ── Data desa yang sinkron antar perangkat ───────────────────────────────────
+
+/**
+ * Kirim op data desa (tanda nol pengeluaran, batas jajan, surat, perayaan, tur) dan terima versi
+ * terbaru dari server. `ops` kosong = hanya menarik perubahan dari perangkat lain. Sengaja tidak
+ * membangun snapshot penuh (12+ query) untuk satu klik lampu.
+ *
+ * `owner` = email pemilik outbox di browser. Kalau sesi sudah berganti akun, op akun lain ditolak
+ * (tetap di outbox sampai akun itu login lagi). ok:true HANYA kalau op benar-benar tersimpan;
+ * code "missing" = tabelnya belum ada (migrasi tepira belum jalan), browser menyimpan op-nya dulu.
+ */
+export async function syncVillage(owner: string, ops: unknown): Promise<SyncResult> {
+  try {
+    const userId = await requireUserId();
+    // Email dari database, bukan dari JWT (bisa basi), sama dengan snapshot.user.email.
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (typeof owner !== "string" || (user?.email ?? "anon") !== owner) {
+      return { ok: false, code: "owner", message: "Akun di tab ini sudah berganti. Muat ulang halaman, ya." };
+    }
+    const missing = { ok: false, code: "missing", message: MISSING_TABLE_MESSAGE } as const;
+    if (!(await applyVillageOps(userId, parseSyncOps(ops)))) return missing;
+    const sync = await loadVillageSync(userId);
+    return sync.available ? { ok: true, sync } : missing;
+  } catch (error) {
+    if (isMissingTable(error)) return { ok: false, code: "missing", message: MISSING_TABLE_MESSAGE };
+    console.error("[village sync]", error);
+    return { ok: false, code: "error", message: error instanceof Error ? error.message : "Terjadi kesalahan." };
+  }
 }
 
 // ── Goal & setoran ───────────────────────────────────────────────────────────

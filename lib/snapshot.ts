@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
 import { ACTIVITY_WINDOW_DAYS, DAY_MS, healthStatusFor, wibDay, type SalaryView, type Snapshot } from "@/lib/game";
 import { knownPlacesFrom, normalizePlaceName } from "@/lib/places";
+import { loadVillageSync } from "@/lib/village-state";
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -76,7 +77,8 @@ export async function buildSnapshot(userId: string, month: number, year: number)
     activityExpenses,
     insight,
     placeRows,
-    earlierPlaceRows
+    earlierPlaceRows,
+    sync
   ] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, image: true } }),
     prisma.goal.findMany({
@@ -135,7 +137,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       where: { ...ownerWhere, date: { gte: new Date(start.getTime() - 365 * DAY_MS), lt: start }, placeName: { not: null } },
       orderBy: { placeName: "asc" },
       take: 2000
-    })
+    }),
+    // Data desa yang sinkron antar perangkat. Tabelnya milik migrasi tepira: kalau belum ada,
+    // hasilnya kosong + available:false (desa jalan dari localStorage), tidak melempar error.
+    loadVillageSync(userId)
   ]);
 
   const totalIncome = (salary?.amount || 0) + (bonus?.amount || 0);
@@ -284,6 +289,7 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       debts: walletDebts,
       netWorth: walletAssets - walletDebts
     },
+    sync,
     pinRequired: Boolean(process.env.APP_PIN),
     devLogin: isDevLoginEnabled,
     generatedAt: new Date().toISOString()

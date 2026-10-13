@@ -76,7 +76,7 @@ export default function HUD() {
           </div>
           <button
             className="pill ghost tour-replay"
-            onClick={() => startTour(0)}
+            onClick={() => startTour(0, true)}
             title="Tur desa: ulangi panduan"
             aria-label="Ulangi tur desa"
             data-tour="tour-replay"
