@@ -130,3 +130,17 @@ export function prepareOutbox(owner: string, newId: string, today: number): Sync
   writeRaw(IMPORT_FLAG_PREFIX + owner, fp);
   return cache.outbox;
 }
+
+// ── Pengingat web push di perangkat ini ──────────────────────────────────────
+// SENGAJA per perangkat (tidak ikut sinkron): "perangkat ini mau dikabari". Pilihan jenis pengingat
+// (lampu, tagihan) per akun ada di database (ReminderPreference). Kalau nyala & izin masih ada, desa
+// memperbarui langganannya sendiri setiap dibuka (lihat usePushBridge).
+const PUSH_PREFIX = "tepira-village-push:v1:";
+
+export function readPushWanted(owner: string) {
+  return readRaw(PUSH_PREFIX + owner) === "1";
+}
+
+export function writePushWanted(owner: string, on: boolean) {
+  writeRaw(PUSH_PREFIX + owner, on ? "1" : "0");
+}

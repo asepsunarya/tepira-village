@@ -10,6 +10,7 @@ import PinGate from "./ui/PinGate";
 import LabelLayer from "./ui/LabelLayer";
 import Tutorial, { useTourOn } from "./ui/Tutorial";
 import { useWibToday } from "./useProgress";
+import { usePushBridge } from "./usePush";
 
 // Canvas WebGL hanya di browser.
 const Scene = dynamic(() => import("./scene/Scene"), {
@@ -47,6 +48,9 @@ export default function VillageApp({ initial, isNewUser }: { initial: Snapshot; 
     const current = useVillage.getState().snapshot;
     if (!current || current.user.email !== initial.user.email) hydrate(initial);
   }, [initial, hydrate]);
+
+  // 🔔 Pengingat: klik notifikasi → panelnya, dan langganan perangkat ini diperbarui diam-diam.
+  usePushBridge(initial.user.email);
 
   return (
     <div className={`app ${tourOn ? "tour-on" : ""}`}>

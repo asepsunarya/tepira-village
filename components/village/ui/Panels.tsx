@@ -42,6 +42,7 @@ import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicke
 import JajanView from "./JajanView";
 import AliranView from "./AliranView";
 import JournalPanel from "./JournalPanel";
+import ReminderSection from "./ReminderSection";
 import RecurringPanel, { GoalRecurring, MailboxBills, MonthRecurring } from "./RecurringPanel";
 import { dayInput, firstOnOrAfter, ruleStatus } from "@/lib/recurring";
 import { wibDateParts } from "@/lib/season";
@@ -1381,6 +1382,8 @@ function VillagePanel() {
         <button className="pill" onClick={() => setPanel("save")}>🪙 Nabung</button>
         <button className="pill" onClick={() => setPanel("journal")}>📔 Jurnal tahun ini</button>
       </div>
+
+      <ReminderSection />
 
       <section>
         <h3>

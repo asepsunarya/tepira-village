@@ -1,7 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import { auth, signOut, userOwnedWhere } from "@/lib/auth";
+import { requireActionUserId, signOut, userOwnedWhere } from "@/lib/auth";
 import { buildSnapshot, normalizePeriod } from "@/lib/snapshot";
 import {
   createExpenseWithWallet,
@@ -36,12 +36,7 @@ import { wibDay } from "@/lib/game";
 
 type Period = { month: number; year: number };
 
-async function requireUserId() {
-  const session = await auth();
-  const userId = session?.user?.id;
-  if (!userId) throw new Error("Sesi habis. Silakan login lagi.");
-  return userId;
-}
+const requireUserId = requireActionUserId;
 
 /** `fn` boleh mengembalikan pesan sukses (tanpa nominal): ditampilkan store sebagai notice. */
 async function run(period: Period, fn: (userId: string) => Promise<string | void>): Promise<ActionResult> {

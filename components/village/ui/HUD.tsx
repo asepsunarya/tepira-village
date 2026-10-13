@@ -5,6 +5,7 @@ import { levelFor, levelTitle, nextUnlock, villageXp, xpForLevel } from "@/lib/g
 import { monthLabel } from "@/lib/format";
 import { SEASONS, seasonForMonth } from "@/lib/season";
 import { signOutAction } from "@/app/village/actions";
+import { disablePushForLogout } from "../push";
 import { LogoMark } from "@/components/brand/Logo";
 import { useVillage } from "../store";
 import { isFullscreenPanel, type Panel, type TimeOfDay } from "../types";
@@ -227,7 +228,13 @@ export default function HUD() {
           <div className="user-menu">
             <small className="muted">{user.email}</small>
             {snapshot.devLogin && <small className="dev-badge">DEV LOGIN aktif</small>}
-            <form action={signOutAction}>
+            <form
+              action={async () => {
+                // Perangkat ini berhenti menerima pengingat akun ini (browser bersama), maks 2 dtk.
+                if (user.email) await disablePushForLogout(user.email);
+                await signOutAction();
+              }}
+            >
               <button className="pill" type="submit">↪ Keluar</button>
             </form>
           </div>

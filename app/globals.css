@@ -863,3 +863,17 @@ button.pill.mail-pill { align-self: flex-start; color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   .mail-pill { animation: none; }
 }
+
+/* 🔔 Pengingat (ReminderSection, panel Perkembangan desa) */
+.reminders { display: flex; flex-direction: column; gap: 8px; }
+.reminders .journal-fx + .journal-fx { margin-top: -2px; }
+.reminder-title { display: block; color: var(--ink); font-size: 12px; margin-bottom: 1px; }
+.reminder-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.reminders .pill:disabled { opacity: 0.6; cursor: wait; transform: none; }
+.reminder-devices { display: flex; flex-direction: column; gap: 4px; }
+.reminder-devices .pill { display: inline-flex; align-items: center; gap: 4px; }
+.reminder-forget { border: 0; background: none; padding: 0 0 0 2px; font: inherit; color: var(--ink-soft); cursor: pointer; }
+.reminder-forget:hover { color: #c23b3b; }
+@media (max-width: 640px) {
+  .reminder-here { flex-wrap: wrap; }
+}

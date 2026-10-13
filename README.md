@@ -8,9 +8,10 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 
 > Repo ini **memakai backend tepira yang sama** (database Postgres + login Google yang sama). Data yang tampil
 > di sini = data yang tampil di tepira.id, dan sebaliknya. Skema & migrasi tetap milik repo tepira: kolom/tabel
-> yang hanya dipakai desa (tempat pengeluaran, data desa yang sinkron antar perangkat, tagihan rutin) juga dibuat
-> lewat migrasi di sana, jadi **migrasinya harus jalan di produksi sebelum desa di-deploy** (lihat
-> [Sinkron antar perangkat](#sinkron-antar-perangkat) dan [Tagihan rutin & Pak Pos](#tagihan-rutin--pak-pos)).
+> yang hanya dipakai desa (tempat pengeluaran, data desa yang sinkron antar perangkat, tagihan rutin, langganan pengingat)
+> juga dibuat lewat migrasi di sana, jadi **migrasinya harus jalan di produksi sebelum desa di-deploy** (lihat
+> [Sinkron antar perangkat](#sinkron-antar-perangkat), [Tagihan rutin & Pak Pos](#tagihan-rutin--pak-pos), dan
+> [Pengingat](#pengingat-web-push)).
 
 ## Konsep "game"
 
@@ -32,10 +33,12 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | —                             | Bangunan level: dermaga (Lv4), pasar (Lv8), mercusuar (Lv15), pulau kedua (Lv25), balon udara (Lv40) |
 | —                             | Lampu jalan streak: satu per hari tercatat (7 hari terakhir); tiap 7 hari beruntun satu warga pindah ke desa |
 | —                             | Musim pulau ikut bulan yang dilihat (hujan, panen, kemarau, mangga) + 📔 jurnal tahun ini "hari ke-N dari 365" |
+| —                             | 🔔 Pengingat di HP/laptop: 📬 tukang pos membawa tagihan (pagi), 💡 lampu hari ini belum menyala (malam); hanya jumlah, tanpa nominal |
 
 Level, XP, streak, dan warga dihitung di client dari data yang sudah ada. Yang ditambahkan desa sendiri (tanda nol
-pengeluaran, warga/level yang sudah dirayakan, surat terbaca, progres tur, batas jajan, tagihan rutin) tersimpan di akun
-dan ikut ke perangkat lain, lihat [Sinkron antar perangkat](#sinkron-antar-perangkat).
+pengeluaran, warga/level yang sudah dirayakan, surat terbaca, progres tur, batas jajan, tagihan rutin, pilihan pengingat) tersimpan
+di akun dan ikut ke perangkat lain, lihat [Sinkron antar perangkat](#sinkron-antar-perangkat). Langganan pengingat sendiri per
+perangkat (satu baris per browser), lihat [Pengingat](#pengingat-web-push).
 
 ## Loop harian
 
@@ -228,7 +231,9 @@ ber-`userId` NOT NULL (query dengan `{ userId }` biasa, bukan `userOwnedWhere`):
 | Kiriman Pak Pos yang sudah diumumkan | `VillageState` kunci `mail` (`{ occ }` = id tagihan tertinggi) | Maksimum (`GREATEST`): tagihan yang diumumkan di HP tidak diumumkan lagi di laptop |
 
 Yang **tetap per perangkat**: preferensi tampilan `tepira-village-ui` (jam/cuaca, label, sembunyikan angka, kunci kamera,
-suasana peta, efek musim) karena tergantung layar & tempat, dan PIN yang sudah dibuka (`sessionStorage`, per tab).
+suasana peta, efek musim) karena tergantung layar & tempat, PIN yang sudah dibuka (`sessionStorage`, per tab), dan apakah
+perangkat ini mau menerima pengingat (`tepira-village-push:v1:<email>` + langganan push browser-nya; pilihan jenis pengingatnya per
+akun, lihat [Pengingat](#pengingat-web-push)).
 
 Cara kerjanya (`lib/village-sync.ts` murni + tes, `lib/village-state.ts` di server, `components/village/daily.ts` di browser):
 
@@ -295,7 +300,8 @@ Aturannya (`lib/recurring.ts`, murni + tes):
 
 Kapan diproses: render `/village` (sebelum `buildSnapshot`, jadi saldo di render pertama sudah terpotong), `fetchSnapshot` (refresh
 & ganti bulan), aksi 🔁, aksi ringan `syncRecurring` saat hari WIB berganti selagi desa terbuka atau tab kembali dilihat setelah
->30 menit (snapshot hanya dibangun kalau ada yang berubah), dan cron lewat `processDueRecurring()`. Semua aman dijalankan bersamaan
+>30 menit (snapshot hanya dibangun kalau ada yang berubah), dan dua cron harian untuk semua user (`/api/cron/postman` 07.00–08.00 WIB
+dan susulan `/api/cron/reminders` 20.00–21.00 WIB, lihat [Pengingat](#pengingat-web-push)). Semua aman dijalankan bersamaan
 (dua tab, HP + laptop, cron): membuat tagihan = compare-and-set `nextDueDate` (+ `updatedAt`) lalu `createMany skipDuplicates`
 (unik `recurringId + dueDate`); menyelesaikan = klaim `pending → posted/skipped` (dengan `userId`), pengeluaran/setoran, dan
 tautannya dalam satu transaksi pendek per tagihan (hanya `tx`, tanpa `Promise.all`, `connection_limit=1`). Yang kalah balapan
@@ -317,8 +323,90 @@ query pengeluaran/setoran (tanda 🔁 & penyaring lampu dibaca terpisah), jadi q
 
 Untuk cron (`lib/recurring-server.ts`): `processDueRecurring({ userId?, now?, budgetMs? })` (tanpa `userId` = semua user, per batch,
 berhenti memulai pekerjaan baru setelah `budgetMs`, default 40 dtk), `pendingBillCounts({ userIds?, now? })` (tagihan menunggu &
-yang jatuh tempo hari ini per user), dan `userIdsRecordedOn(userIds, day)` (hari itu "tercatat" tanpa menghitung yang otomatis;
-gabungkan dengan `noSpendMarkedUserIds` untuk pengingat lampu).
+yang jatuh tempo hari ini per user), dan `userIdsRecordedOn(userIds, day)` (hari itu "tercatat" tanpa menghitung yang otomatis,
+baris lama tanpa pemilik menyalakan semua user seperti lampu di desa; digabung dengan `noSpendMarkedUserIds` oleh pengingat lampu).
+
+## Pengingat (web push)
+
+Notifikasi singkat di HP/laptop, juga saat desa tidak dibuka. Dinyalakan per perangkat di **🏝️ Perkembangan desa → 🔔 Pengingat**
+(di bawah lampu streak).
+
+| Pengingat                          | Kapan (WIB)                                    | Isi                                                                     | Diklik            |
+| ---------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------- | ----------------- |
+| 📬 Tukang pos                      | 07.00–08.00, susulan 20.00–21.00 kalau pagi belum terkirim | "📬 Tukang pos membawa 2 tagihan" + "Jatuh tempo hari ini / sudah lewat"; atau "sudah mampir: 1 kiriman rutin dicatat otomatis" | 📮 Kotak pos |
+| 💡 Lampu                            | 20.00–21.00                                    | "💡 Lampu hari ini belum menyala": hari ini belum ada catatan & belum ditandai nol | 🏝️ Perkembangan desa |
+| Keduanya di putaran malam          | 20.00–21.00                                    | Satu notifikasi: lampu + "Tukang pos juga membawa N tagihan"             | 📮 Kotak pos      |
+
+- **Tanpa nominal, tanpa nama tagihan.** Hanya jumlah, jadi aman di layar kunci. Kalau `APP_PIN` aktif isinya umum sama sekali
+  ("🏝️ tepira village · Ada pengingat dari desamu"), karena layar kunci tidak dilindungi PIN desa.
+- **Lampu = lampu di desa.** "Tercatat" = pengeluaran/setoran bertanggal hari ini (termasuk baris lama tanpa pemilik, seperti
+  `userOwnedWhere`), tanpa yang dicatat **otomatis** oleh Pak Pos, atau tanda nol pengeluaran (`NoSpendDay`). Tanda yang masih di
+  outbox browser (offline) belum terlihat oleh cron.
+- **Tagihan** dikabarkan kalau ada tagihan menunggu yang jatuh temponya ≤ 3 hari lalu (`BILL_NAG_DAYS`), atau ada yang dicatat
+  otomatis hari ini. Angkanya = semua tagihan yang menunggu (sama dengan chip 📮). Tagihan yang lebih lama tetap ditunggui Pak Pos,
+  tapi HP tidak ditagih tiap pagi selamanya.
+- **Paling banyak sekali per jenis per hari.** Satu baris `ReminderPreference` per akun (`lampSentOn`, `billSentOn` = hari WIB,
+  `DATE`) diklaim dengan `updateManyAndReturn` bersyarat **sebelum** mengirim, jadi cron yang terpanggil dua kali / bersamaan tidak
+  mengirim dobel. Kalau tidak satu pun perangkat user menerima karena gangguan sementara (jaringan, 429, 5xx, waktu habis),
+  klaimnya dikembalikan dan putaran berikutnya mencoba lagi.
+- **Pilihan** 💡 lampu / 📬 tagihan per **akun** (berlaku di semua perangkat); **perangkat ini** dinyalakan / dimatikan sendiri.
+  Tombol *Kirim tes* mengirim satu notifikasi ke perangkat ini saja (paling sering sekali per 15 dtk). Daftar *Perangkat penerima*
+  (dari user-agent) bisa dihapus satu per satu, mis. HP lama. Maksimal 10 perangkat per akun.
+- **Keluar akun** menghapus langganan perangkat ini (maks 2 dtk, keluar tidak pernah tertahan). Browser bersama yang berganti akun:
+  menyalakan pengingat memindahkan langganan browser itu ke akun yang menyalakan (upsert per `endpoint`).
+- **iPhone/iPad (iOS 16.4+)**: push hanya untuk web app di Layar Utama. Di tab Safari biasa bagian ini menampilkan langkah *Bagikan →
+  Tambahkan ke Layar Utama*; app di Layar Utama punya cookie sendiri, jadi login sekali lagi di sana. (Login Google di dalam app Layar
+  Utama belum dites di iPhone sungguhan.)
+- Izin diblokir → petunjuk membuka pengaturan situs (browser tidak mau bertanya lagi). Brave/Chromium tanpa layanan Google →
+  pesan "layanan push browser ini mati". Server tanpa kunci VAPID → "Pengingat belum diatur di server ini", desa tetap jalan.
+
+Cara kerjanya:
+
+- **Browser.** `public/sw.js` (scope `/`, `Cache-Control: no-store` lewat `next.config.mjs`) hanya menangani `push` (selalu
+  menampilkan notifikasi; data rusak → teks bawaan) dan `notificationclick` (hanya URL `/village…`; tab desa yang terbuka
+  difokuskan dan membuka panelnya lewat `postMessage`, kalau tidak ada dibuka `/village?buka=desa|pos`). Tanpa handler `fetch`: tidak
+  ada cache/offline. `components/village/push.ts` memegang izin & langganan (izin hanya diminta dari klik, `Notification` tidak pernah
+  diakses tanpa pengecekan); `usePushBridge` di `VillageApp` membuka panel dari klik notifikasi, membuang `?buka=` dari URL, dan
+  setiap desa dibuka **memperbaiki langganan** perangkat yang mau dikabari (`tepira-village-push:v1:<email>` di localStorage, sengaja
+  tidak ikut sinkron): langganan dibuat ulang kalau dicabut browser / kunci VAPID diganti, disimpan lagi kalau baris di server sudah
+  dihapus; izin dicabut → baris di server ikut dihapus.
+- **Server action** (`app/village/push-actions.ts`, tanpa snapshot): `getReminderStatus`, `savePushSubscription` (endpoint harus
+  `https:` ke layanan push yang dikenal: `fcm.googleapis.com`, `updates.push.services.mozilla.com`, `*.notify.windows.com`,
+  `web.push.apple.com` / `*.push.apple.com`, supaya cron tidak bisa disuruh POST ke alamat sembarang), `removePushSubscription`,
+  `forgetPushDevice`, `updateReminderPrefs`, `sendTestPush`. Endpoint (izin mengirim push) tidak pernah dikirim ke browser lain dan
+  tidak pernah masuk log (hanya host-nya).
+- **Cron** (`vercel.json`, Vercel Hobby: sekali sehari per jadwal, jam UTC, bisa telat sampai 59 menit, bisa terpanggil dua kali):
+  `0 0 * * *` → `/api/cron/postman`, `0 13 * * *` → `/api/cron/reminders`. Keduanya menjalankan Pak Pos untuk semua user dulu
+  (`processDueRecurring`, maks 30 dtk), lalu membaca langganan, pilihan, tagihan, dan catatan hari ini per batch (`IN …`, tanpa query
+  per user), mengklaim, lalu mengirim (maks 8 sekaligus, satu notifikasi per perangkat, `TTL` sampai tengah malam WIB / maks 12 jam
+  untuk tagihan, `topic` = jenis + hari). Runtime Node, `maxDuration = 60`. Hasil kirim: 404/410/401/403 → langganan dihapus
+  (perangkatnya berlangganan ulang sendiri saat desa dibuka); gagal lain → `failureCount` naik, dihapus di kegagalan ke-5; berhasil →
+  `failureCount` 0 + `lastSuccessAt`. Kunci VAPID dicek berpasangan sebelum dipakai, jadi kunci yang tertukar tidak menghapus semua
+  langganan.
+- **Auth cron** hanya `Authorization: Bearer $CRON_SECRET` (dibandingkan waktu-konstan). `CRON_SECRET` kosong = semua ditolak (401);
+  user-agent `vercel-cron` saja tidak cukup. Jawabannya hanya hitungan (tanpa data pribadi). `?dryRun=1` = tanpa Pak Pos, tanpa klaim,
+  tanpa kirim, hanya rencana.
+- **Logika murni + tes**: `lib/reminders.ts` (siapa dapat apa, teks, TTL/topic, klasifikasi status, pengiriman paralel),
+  `lib/push-subscription.ts` (validasi langganan, label perangkat), `lib/cron-auth.ts`; `lib/push-send.ts` (VAPID & web-push, dites
+  dengan web-push tiruan).
+
+**Tabel & urutan rilis.** `WebPushSubscription` (satu baris per browser, `endpoint` unik) dan `ReminderPreference` (satu baris per
+user) ikut migrasi tepira yang sama (`20261014090000_add_village_sync_recurring_push`). Kalau desa jalan duluan: bagian 🔔 bilang
+"belum siap di server", tulis = pesan ramah, cron tetap 200 dengan `push.available: false`, desa tidak terganggu.
+
+**Menyiapkan.**
+
+1. Buat kunci VAPID di terminalmu sendiri: `npx web-push generate-vapid-keys`. Pakai pasangan berbeda untuk lokal dan produksi.
+2. Di project Vercel `tepira-village` (Production) isi `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (Sensitive), `VAPID_SUBJECT`
+   (`mailto:…` atau `https://domain-desa`, bukan localhost), dan `CRON_SECRET` (mis. `openssl rand -hex 32`, Sensitive) **sebelum**
+   deploy: kunci publik ikut di-build ke browser. Mengganti kunci = deploy ulang; perangkat berlangganan ulang sendiri saat desa dibuka.
+3. Setelah deploy, cek Settings → Cron Jobs (dua jadwal), nyalakan pengingat di HP, lalu *Kirim tes*.
+4. Dari terminalmu: `curl -H "Authorization: Bearer $CRON_SECRET" "https://<domain>/api/cron/reminders?dryRun=1"`.
+
+Lokal: tanpa kunci VAPID bagiannya hanya bilang belum diatur. Dengan kunci lokal di `.env.local`, Chrome/Edge di `http://localhost`
+menerima push sungguhan. `PUSH_SEND_MODE=log` = tidak mengirim, hanya `[push:log] <host> <tag> <judul>` di log server. Cron lokal:
+`curl -H "Authorization: Bearer $CRON_SECRET" "http://localhost:3000/api/cron/reminders?dryRun=1"`. Push tanpa server bisa dicoba
+dari DevTools → Application → Service Workers → Push, mis. `{"title":"Tes","body":"Halo","tag":"t","url":"/village?buka=pos"}`.
 
 ## Arsitektur
 
@@ -331,7 +419,10 @@ app/
   village/actions.ts      server actions: nabung, catat pengeluaran, goal (+ target tanggal), dompet, alokasi gaji (semua balikin snapshot baru);
                           syncVillage (op data desa, balikin snapshot.sync saja); tagihan rutin (buat/ubah/jeda/hapus, Catat/Lewati,
                           syncRecurring ringan); page.tsx & fetchSnapshot memproses jatuh tempo dulu
+  village/push-actions.ts server actions 🔔 pengingat (status, simpan/hapus langganan, pilihan, kirim tes), tanpa snapshot
   api/auth/[...nextauth]  handler Auth.js
+  api/cron/postman        cron 07:xx WIB: Pak Pos semua user + push tagihan (Bearer CRON_SECRET)
+  api/cron/reminders      cron 20:xx WIB: susulan Pak Pos + push lampu belum menyala & tagihan yang belum dikabarkan
 lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
   wallet-expenses.ts      port dari tepira (aturan potong/kembalikan saldo dompet, increment atomik); createExpenseInTx untuk tagihan
@@ -350,6 +441,12 @@ lib/
   db-missing.ts           jaring urutan rilis: isMissingTable, readOrMissing, pesan ramah kalau tabel baru belum ada
   recurring.ts            tagihan rutin (murni): jadwal WIB (dijepit akhir bulan), otomatis vs tagihan, terhalang, label, validasi
   recurring-server.ts     (server) baca untuk snapshot, buat & selesaikan tagihan (aman bersamaan), aksi user, fungsi untuk cron
+  reminders.ts            pengingat (murni): siapa dapat apa, teks notifikasi tanpa nominal, TTL/topic, status kirim, kirim paralel
+  push-subscription.ts    validasi langganan push dari browser (host layanan push yang dikenal), label perangkat
+  push-send.ts            (server) kunci VAPID (dicek berpasangan), pengirim web-push & mode log
+  push-server.ts          (server) WebPushSubscription & ReminderPreference: status, simpan (pindah akun), hapus, pilihan, tes
+  reminder-cron.ts        (server) putaran cron: Pak Pos, rencana, klaim per hari, kirim, bereskan langganan mati
+  cron-auth.ts            Bearer CRON_SECRET waktu-konstan, gagal tertutup
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
@@ -360,6 +457,7 @@ components/village/
   kiosks.ts, usePlaces.ts kios yang berdiri untuk snapshot ini; hook belanja per tempat, status batas, kios
   geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
   speech.ts               🎤 Web Speech (SpeechRecognition id-ID): dukungan browser, hook mendengar, pesan galat
+  push.ts, usePush.ts     🔔 izin & langganan push di browser; klik notifikasi → panel, perbaikan langganan saat desa dibuka
   seasons.ts              tampilan pulau per musim (warna rumput/daun, kolam, buah), pojok musim, useReducedMotion
   useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini, tagihan di kotak pos (useBills, useMail)
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
@@ -372,11 +470,13 @@ components/village/
                           Surat), JajanView (peta jajan layar penuh), PlaceLimit (editor & petunjuk batas jajan),
                           SalaryPanel, PlacePicker, PinGate, Tutorial, AliranView (aliran uang layar penuh),
                           VoiceButton (🎤 catat cepat), JournalPanel (📔 jurnal tahun ini), RecurringPanel (🔁 tagihan rutin + tagihan
-                          di 📮 kotak pos)
+                          di 📮 kotak pos), ReminderSection (🔔 pengingat di Perkembangan desa)
   tutorial/               langkah tur pengguna baru; baseline & hitungan aksi per tab (status tur tersimpan di akun)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
 public/brand/             mark.svg, mark-small.svg (= favicon.svg), app-icon.svg (sumber apple-touch-icon & icon-192/512)
+public/sw.js              service worker HANYA untuk web push (push + klik notifikasi), tanpa cache
+vercel.json               dua cron harian (Hobby): postman 0 0 * * * dan reminders 0 13 * * * (UTC)
 prisma/schema.prisma      SALINAN skema tepira — repo ini tidak punya migrasi sendiri
 ```
 
@@ -419,7 +519,12 @@ tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
 | `AUTH_SECRET`                | Boleh berbeda dari tepira (cookie per domain). `openssl rand -base64 32`                    |
 | `AUTH_URL`                   | URL app ini, mis. `http://localhost:3000`                                                   |
 | `GOOGLE_CLIENT_ID/SECRET`    | Boleh pakai OAuth client yang sama dengan tepira; **tambahkan redirect URI** `<AUTH_URL>/api/auth/callback/google`. Nama `AUTH_GOOGLE_ID/SECRET` juga diterima. |
-| `APP_PIN` (opsional)         | Sama seperti tepira: angka disembunyikan sampai PIN dimasukkan.                            |
+| `APP_PIN` (opsional)         | Sama seperti tepira: angka disembunyikan sampai PIN dimasukkan. Notifikasi pengingat jadi umum (tanpa jumlah). |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. |
+| `VAPID_PRIVATE_KEY` (opsional) | Pasangan kunci privatnya (Sensitive). Dicek berpasangan; tidak cocok = pengingat dianggap belum diatur. |
+| `VAPID_SUBJECT` (opsional)   | `mailto:<kontak>` atau `https://<domain desa>`, bukan localhost.                            |
+| `CRON_SECRET`                | Rahasia cron (`/api/cron/postman`, `/api/cron/reminders`), acak & panjang (`openssl rand -hex 32`), Sensitive. Kosong = cron selalu 401, jadi Pak Pos & pengingat tidak jalan dari cron. Terpisah dari milik tepira. |
+| `PUSH_SEND_MODE` (dev/tes)   | `log` = notifikasi tidak dikirim, hanya dicatat (host + tag + judul) di log server.         |
 | `DEV_LOGIN_EMAIL` (dev saja) | Login tanpa Google di `npm run dev`. Diabaikan total saat `NODE_ENV=production`.           |
 
 ### Development lokal tanpa Supabase
@@ -435,8 +540,8 @@ npm run dev              # /login → tombol "Dev login (tanpa Google)"
 ```
 
 Jangan pernah menjalankan `db:push:dev` ke database produksi; skema & migrasi dimiliki repo tepira. Lupa `db:push:dev`
-setelah menyalin skema baru? Desa tetap jalan dalam mode lokal (data desa hanya di browser, peringatan `[desa] tabel … belum
-ada` di log server) sampai tabelnya dibuat.
+setelah menyalin skema baru? Desa tetap jalan dalam mode lokal (data desa hanya di browser, tanpa Pak Pos, 🔔 pengingat "belum siap",
+peringatan `[desa] tabel … belum ada` di log server) sampai tabelnya dibuat.
 
 ### Build & deploy
 
@@ -444,7 +549,8 @@ ada` di log server) sampai tabelnya dibuat.
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-Deploy ke Vercel seperti tepira. `postinstall` menjalankan `prisma generate`.
+Deploy ke Vercel seperti tepira. `postinstall` menjalankan `prisma generate`. `vercel.json` mendaftarkan dua cron harian (hanya
+jalan di deployment Production); isi `CRON_SECRET` dan kunci VAPID dulu, lihat [Pengingat](#pengingat-web-push).
 
 Supaya env tidak perlu disalin ulang antar project, pakai **Shared Environment Variables**: di halaman
 Environment Variables buka tab **Shared**, masukkan nilainya sekali (mis. `DATABASE_URL`, `GOOGLE_CLIENT_ID`,
@@ -488,5 +594,6 @@ tidak menangkap klik).
 - Klik lampu, warga, bangunan level, atau baris 🔥 di kartu kiri atas → perkembangan desa. Klik kotak pos, Pak Pos, atau chip
   📮 di kartu kiri atas → 📮 kotak pos (tagihan rutin + surat mingguan).
 - Klik kolam, atau kotak Pengeluaran / Sisa budget di kartu kiri atas → 🌊 aliran uang.
+- Klik notifikasi pengingat → desa terbuka (atau tab desa yang sudah terbuka difokuskan) langsung di 📮 kotak pos / 🏝️ perkembangan desa.
 - ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`); musim pulau ikut. Klik label bulan → 📔 jurnal.
 - 👁️ / 🙈 untuk menyembunyikan angka (mode privasi), 🪄 cuaca otomatis mengikuti skor kesehatan.

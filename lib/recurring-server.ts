@@ -682,8 +682,9 @@ export async function pendingBillCounts(
 /**
  * User (dari `userIds`) yang hari WIB `day` sudah "tercatat" untuk lampu streak: punya pengeluaran
  * atau setoran bertanggal hari itu yang BUKAN dicatat otomatis oleh Pak Pos. Definisi sama dengan
- * activityDays di snapshot. Tanda nol pengeluaran dicek terpisah (noSpendMarkedUserIds). Baris lama
- * tanpa pemilik (userId null) tidak dihitung.
+ * activityDays di snapshot (userOwnedWhere): baris lama tanpa pemilik (userId null, atau setoran ke
+ * goal tanpa pemilik) terlihat oleh semua akun, jadi menyalakan lampu SEMUA user. Tanda nol
+ * pengeluaran dicek terpisah (noSpendMarkedUserIds).
  */
 export async function userIdsRecordedOn(userIds: readonly string[], day: number): Promise<Set<string>> {
   if (!userIds.length) return new Set();
@@ -691,11 +692,11 @@ export async function userIdsRecordedOn(userIds: readonly string[], day: number)
   const to = new Date(from.getTime() + DAY_MS);
   const ids = [...userIds];
   const expenses = await prisma.expense.findMany({
-    where: { userId: { in: ids }, date: { gte: from, lt: to } },
+    where: { OR: [{ userId: { in: ids } }, { userId: null }], date: { gte: from, lt: to } },
     select: { id: true, userId: true }
   });
   const contributions = await prisma.contribution.findMany({
-    where: { goal: { userId: { in: ids } }, date: { gte: from, lt: to } },
+    where: { goal: { OR: [{ userId: { in: ids } }, { userId: null }] }, date: { gte: from, lt: to } },
     select: { id: true, goal: { select: { userId: true } } }
   });
   const { value: autos } = await readOrMissing(
@@ -714,7 +715,16 @@ export async function userIdsRecordedOn(userIds: readonly string[], day: number)
   const autoExpenses = new Set(autos.map((a) => a.expenseId));
   const autoContributions = new Set(autos.map((a) => a.contributionId));
   const out = new Set<string>();
-  for (const e of expenses) if (e.userId && !autoExpenses.has(e.id)) out.add(e.userId);
-  for (const c of contributions) if (c.goal.userId && !autoContributions.has(c.id)) out.add(c.goal.userId);
-  return out;
+  let legacy = false;
+  for (const e of expenses) {
+    if (autoExpenses.has(e.id)) continue;
+    if (e.userId) out.add(e.userId);
+    else legacy = true;
+  }
+  for (const c of contributions) {
+    if (autoContributions.has(c.id)) continue;
+    if (c.goal.userId) out.add(c.goal.userId);
+    else legacy = true;
+  }
+  return legacy ? new Set(ids) : out;
 }
