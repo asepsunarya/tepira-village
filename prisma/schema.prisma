@@ -17,6 +17,7 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 model User {
   id            String        @id @default(cuid())
   name          String?
@@ -32,6 +33,13 @@ model User {
   balances      Balance[]
   wallets       Wallet[]
   weeklyFinancialInsights WeeklyFinancialInsight[]
+  recurringTransactions RecurringTransaction[]
+  recurringOccurrences  RecurringOccurrence[]
+  webPushSubscriptions  WebPushSubscription[]
+  reminderPreference    ReminderPreference?
+  noSpendDays           NoSpendDay[]
+  placeSpendLimits      PlaceSpendLimit[]
+  villageStates         VillageState[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 }
@@ -81,6 +89,7 @@ model Goal {
   userId        String?
   user          User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
   contributions Contribution[]
+  recurringTransactions RecurringTransaction[]
 
   @@index([userId])
 }
@@ -92,6 +101,7 @@ model Contribution {
   date   DateTime @default(now())
   goal   Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
   goalId Int
+  recurringOccurrence RecurringOccurrence?
 }
 
 model Expense {
@@ -111,6 +121,7 @@ model Expense {
   placeName String?
   latitude  Float?
   longitude Float?
+  recurringOccurrence RecurringOccurrence?
 
   @@index([userId])
   @@index([walletId])
@@ -198,6 +209,7 @@ model Wallet {
   userId      String?
   user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   expenses    Expense[]
+  recurringTransactions RecurringTransaction[]
 
   @@index([userId])
   @@index([userId, sortOrder])
@@ -221,4 +233,129 @@ model WeeklyFinancialInsight {
 
   @@unique([userId, weekStart])
   @@index([userId, year, month])
+}
+
+// ── tepira-village: transaksi berulang ("tukang pos") ───────────────────────
+// Aturan berulang: langganan, cicilan, sewa (kind "expense") atau setoran rutin ke goal (kind "saving").
+model RecurringTransaction {
+  id              Int                   @id @default(autoincrement())
+  kind            String                @default("expense") // "expense" | "saving"
+  title           String // "Spotify", "Cicilan HP", "Kos"
+  amount          Int
+  category        String? // label kategori tepira (kind "expense")
+  note            String?
+  source          String                @default("gaji") // "gaji" | "bonus" (kind "expense")
+  frequency       String                @default("monthly") // "weekly" | "monthly" | "yearly"
+  repeatEvery     Int                   @default(1) // tiap N minggu/bulan/tahun
+  dayOfMonth      Int? // 1..31 (monthly/yearly); 29-31 dijepit ke hari terakhir bulan itu
+  startDate       DateTime              @db.Date // jatuh tempo pertama (hari WIB)
+  nextDueDate     DateTime              @db.Date // jatuh tempo berikutnya yang BELUM dibuatkan occurrence
+  maxOccurrences  Int? // cicilan 12x; null = tanpa akhir
+  occurrenceCount Int                   @default(0)
+  mode            String                @default("confirm") // "confirm" | "auto"
+  active          Boolean               @default(true)
+  placeName       String?
+  latitude        Float?
+  longitude       Float?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  userId          String
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  walletId        Int?
+  wallet          Wallet?               @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  goalId          Int?
+  goal            Goal?                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  occurrences     RecurringOccurrence[]
+
+  @@index([userId])
+  @@index([active, nextDueDate])
+  @@index([walletId])
+  @@index([goalId])
+}
+
+// Satu jatuh tempo = satu "surat tagihan" di kotak pos. (recurringId, dueDate) unik = kunci idempoten.
+model RecurringOccurrence {
+  id             Int                  @id @default(autoincrement())
+  dueDate        DateTime             @db.Date
+  amount         Int
+  status         String               @default("pending") // "pending" | "posted" | "skipped"
+  postedVia      String? // "auto" | "confirm"
+  resolvedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  recurringId    Int
+  recurring      RecurringTransaction @relation(fields: [recurringId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenseId      Int?                 @unique
+  expense        Expense?             @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  contributionId Int?                 @unique
+  contribution   Contribution?        @relation(fields: [contributionId], references: [id], onDelete: SetNull)
+
+  @@unique([recurringId, dueDate])
+  @@index([userId, status])
+}
+
+// ── tepira-village: web push ─────────────────────────────────────────────────
+// Satu baris per browser/perangkat. Bukan "PushSubscription" supaya tipe Prisma tidak bentrok dengan tipe DOM.
+model WebPushSubscription {
+  id             Int       @id @default(autoincrement())
+  endpoint       String    @unique
+  p256dh         String
+  auth           String
+  expirationTime DateTime?
+  userAgent      String?
+  failureCount   Int       @default(0)
+  lastSuccessAt  DateTime?
+  lastFailureAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ReminderPreference {
+  userId       String    @id
+  lampReminder Boolean   @default(true)
+  billReminder Boolean   @default(true)
+  lampSentOn   DateTime? @db.Date
+  billSentOn   DateTime? @db.Date
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── tepira-village: state per user yang dulu di localStorage ─────────────────
+model NoSpendDay {
+  userId    String
+  day       DateTime @db.Date // hari WIB; = wibDayDate(day) di desa
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, day])
+}
+
+model PlaceSpendLimit {
+  userId       String
+  placeKey     String // normalizePlaceName(placeName)
+  placeName    String
+  monthlyLimit Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, placeKey])
+}
+
+model VillageState {
+  userId    String
+  key       String // "letter" | "seen" | "tour" | ...
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, key])
 }
