@@ -22,8 +22,11 @@ const pointer = {
   onPointerOut: () => (document.body.style.cursor = "")
 };
 
-/** Bangunan yang terbuka sesuai level desa, plus papan "segera dibangun" untuk yang berikutnya. */
-export default function Unlocks({ night }: { night: boolean }) {
+/**
+ * Bangunan yang terbuka sesuai level desa, plus papan "segera dibangun" untuk yang berikutnya.
+ * `grass`: rumput pulau kedua mengikuti musim (lihat Island).
+ */
+export default function Unlocks({ night, grass }: { night: boolean; grass?: string }) {
   const { level } = useVillageXp();
   const setPanel = useVillage((s) => s.setPanel);
   const open: OpenHandler = (e) => {
@@ -37,7 +40,7 @@ export default function Unlocks({ night }: { night: boolean }) {
       {has("dermaga") && <Dock onClick={open} />}
       {has("pasar") && <Market onClick={open} night={night} />}
       {has("mercusuar") && <Lighthouse onClick={open} night={night} />}
-      {has("pulau") && <Islet onClick={open} />}
+      {has("pulau") && <Islet onClick={open} grass={grass} />}
       {has("balon") && <Balloon onClick={open} />}
       {/* Balon udara tidak punya tempat di darat; cukup disebut di panel. */}
       {next && next.key !== "balon" && <ComingSoon spot={UNLOCK_SPOTS[next.key]} onClick={open} />}
@@ -271,13 +274,13 @@ const ISLET_FLOWERS: [number, number, string][] = [
 ];
 
 /** Pulau kecil di selatan: pohon kelapa, saung, dan jembatan kayu ke pantai desa. */
-function Islet({ onClick }: { onClick: OpenHandler }) {
+function Islet({ onClick, grass = "#a6dc78" }: { onClick: OpenHandler; grass?: string }) {
   const geometry = useMemo(() => makeIsletGeometry(ISLET.r), []);
   return (
     <group onClick={onClick} {...pointer}>
       <group position={[ISLET.x, 0, ISLET.z]}>
         <mesh geometry={geometry} receiveShadow castShadow>
-          <meshStandardMaterial attach="material-0" color="#a6dc78" />
+          <meshStandardMaterial attach="material-0" color={grass} />
           <meshStandardMaterial attach="material-1" color="#f3d6c2" />
         </mesh>
         <Palm position={[-1.7, 0, 0.9]} />

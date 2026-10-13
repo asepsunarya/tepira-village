@@ -83,6 +83,8 @@ export interface MonthSummary {
   expenses: { total: number; count: number };
   budget: { limit: number; remaining: number; status: "OVER_BUDGET" | "WITHIN_BUDGET" | "NO_BUDGET" };
   savedThisMonth: number;
+  /** savedThisMonth per goal (kanvas aliran uang); goal yang sudah dihapus tidak ada di sini */
+  savedByGoal: { goalId: number; amount: number }[];
   savingsRate: number;
   byCategory: Record<string, number>;
   health: {

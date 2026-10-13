@@ -24,9 +24,11 @@ dompet jadi peti harta, dan skor kesehatan keuangan bulanan menentukan cuaca pul
 | Skor kesehatan (Laporan)      | Cincin skor di Balai Desa + cuaca otomatis (≥70 cerah, ≥55 berawan, <55 senja) |
 | Target tanggal goal           | Kejar deadline: tukang bekerja kalau sesuai jadwal, rumput liar tumbuh kalau telat, plus "Rp…/minggu" |
 | Insight mingguan (Laporan)    | Surat dari Cyrene di kotak pos Balai Desa; benderanya naik kalau ada surat baru |
+| Arus bulan ini (Laporan)      | 🌊 Aliran uang: sungai dari mata air gaji/bonus ke waduk desa, lalu ke tiap kategori, goal, dan sisa |
 | —                             | Level desa: 1 XP per Rp10.000 ditabung + 5 XP per setoran               |
 | —                             | Bangunan level: dermaga (Lv4), pasar (Lv8), mercusuar (Lv15), pulau kedua (Lv25), balon udara (Lv40) |
 | —                             | Lampu jalan streak: satu per hari tercatat (7 hari terakhir); tiap 7 hari beruntun satu warga pindah ke desa |
+| —                             | Musim pulau ikut bulan yang dilihat (hujan, panen, kemarau, mangga) + 📔 jurnal tahun ini "hari ke-N dari 365" |
 
 Level, XP, streak, dan warga dihitung di client dari data yang sudah ada (tidak menambah tabel baru).
 
@@ -53,6 +55,32 @@ Supaya desa punya alasan dibuka setiap hari, bukan hanya saat menabung:
 - **Perayaan.** Warga baru dan bangunan yang baru terbuka dirayakan sekali (notifikasi + toast di lokasinya),
   termasuk yang bertambah sejak kunjungan terakhir.
 
+## Jurnal tahun & musim pulau
+
+**Musim** mengikuti bulan yang dilihat (sama seperti cuaca dan kios), jadi ‹ › sekaligus jalan-jalan antar musim. Empat
+musim ala Indonesia (`lib/season.ts`, tampilannya di `components/village/seasons.ts` dan `scene/Seasons.tsx`):
+
+| Bulan   | Musim            | Di pulau                                                                                                   |
+| ------- | ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Nov–Feb | 🌧️ Musim hujan   | Rumput paling hijau, kolam penuh, genangan di setapak; gerimis saat berawan/malam, pelangi saat cerah, kunang-kunang saat senja/malam |
+| Mar–Apr | 🌾 Musim panen   | Rumput keemasan, jerami & karung beras di pelataran Balai Desa, kupu-kupu saat siang                      |
+| Mei–Agu | ☀️ Musim kemarau | Rumput & daun menguning, sebagian pohon meranggas, bunga tinggal separuh, kolam surut, layangan; Agustus: bendera merah-putih di lampu jalan |
+| Sep–Okt | 🥭 Musim mangga  | Pohon berbuah mangga, daun berguguran, layangan, sekeranjang mangga di pelataran                         |
+
+- Musim hanya mengubah warna & skala saat render (rumput, mahkota pohon, kolam) plus efek kecil. Tata letak dekorasi,
+  langit/laut/cahaya (milik cuaca skor), dan warna tanda bahaya (rumput liar, kios layu) tidak berubah. Landing tidak ikut.
+- Efek bergerak (hujan, kunang-kunang, daun, kupu-kupu) tidak tampil kalau sistem meminta *kurangi gerakan*; layangan dan
+  bendera diam. Hujan, pelangi, kunang-kunang, layangan, kupu-kupu, dan daun gugur bisa dimatikan di jurnal (`ui.reduceFx`,
+  tersimpan di browser); warna pulau (termasuk mangga & pohon meranggas), genangan, pojok musim, dan bendera tetap tampil.
+
+**📔 Jurnal tahun ini** (panel samping) memakai **hari ini (WIB)**: cincin "Hari ke-286 dari 365", musim sekarang dan
+pergantian berikutnya ("Musim hujan mulai 1 Nov, 19 hari lagi"), pita 12 bulan (klik = pindah ke bulan itu), kalender
+kebiasaan 12×31 dari hari tercatat + tanda nol pengeluaran (hari sebelum catatan pertama dalam 400 hari terakhir = "belum ada
+data", tidak dihitung terlewat), dan
+angka tahun ini: hari tercatat, deret terpanjang & sekarang (sejak 1 Januari), goal dibuat, warga, level. Dibuka dari label bulan di kontrol
+atas (emoji musim di atasnya), chip di 🏝️ Perkembangan desa, atau pojok musim di samping Balai Desa. Tanpa query baru:
+datanya `activityDays` (400 hari) yang sudah dikirim untuk lampu streak.
+
 ## Catat cepat
 
 Kolom **⚡ Catat cepat** di atas form Catat membaca satu kalimat dan mengisi form di bawahnya setiap ketikan;
@@ -77,6 +105,24 @@ Enter langsung menyimpan. Pengurainya `lib/quick-entry.ts`: murni aturan & kata 
 - Yang tidak disebut di kalimat memakai isian form sebelum mulai mengetik; menghapus kalimat mengembalikannya.
   Setelah tersimpan, dompet & kategori tetap (seperti form biasa), tanggal kembali ke bawaan.
 - Ikut mode sembunyikan angka: kolomnya ikut ditutup, sama seperti kolom nominal.
+
+### 🎤 Catat lewat suara
+
+Tombol **🎤** di samping kolom catat cepat mengisi kolomnya dari ucapan (Web Speech API, `id-ID`), lalu kalimatnya
+dibaca `parseQuickEntry` seperti yang diketik. Contoh: *"bakso lima belas ribu pakai gopay"* → `bakso Rp15.000 pakai gopay`.
+
+- **Bilangan yang diucapkan** dinormalkan dulu oleh `lib/spoken-amount.ts`: `lima belas ribu`, `seratus lima puluh ribu`,
+  `sejuta`, `satu setengah juta`, `tiga ribu lima` (= 3.500), `goceng`/`ceban`/`gopek`, `dua rebu`, `lima ratus perak`,
+  `… rupiah`. Yang bernilai uang ditulis `Rp…` (nominal jelas, tidak "dianggap ribuan"); bilangan lain jadi angka biasa
+  (`tiga hari yang lalu` → `3 hari yang lalu`).
+- Hasil sementara langsung mengisi kolom selagi bicara. **Tidak pernah menyimpan sendiri**: cek pratinjau, lalu Enter atau
+  💸 Catat. Teks yang sudah diketik sebelum menekan 🎤 tetap ada, ucapan ditambahkan di belakangnya.
+- Nama dompet yang terucap terpisah tetap cocok ("go pay" → GoPay, "shopee pay" → ShopeePay), begitu juga "grab food",
+  "go ride", "wi fi", "e toll". `@tempat` tidak bisa diucapkan; tempat tetap lewat 📍.
+- Didukung Chrome/Edge (desktop & Android) dan Safari (macOS, iOS 14.5+). Di Firefox tombolnya tidak muncul. Hanya jalan
+  di https/localhost. Audionya diproses layanan milik browser (Google untuk Chrome, Apple untuk Safari), bukan server desa.
+- Tekan lagi (⏹) untuk selesai, **Esc** untuk batal. Berhenti sendiri setelah 12 detik, saat panel ditutup, atau saat angka
+  disembunyikan (tombolnya ikut tersembunyi bersama kolomnya).
 
 ## Peta jajan
 
@@ -113,6 +159,28 @@ dimuat hanya saat peta dibuka; worker-nya disalin webpack sebagai aset (`setWork
 2. Baru deploy perubahan desa ini. Kalau desa jalan duluan, semua query pengeluaran gagal karena kolomnya belum ada.
 
 Untuk DB lokal cukup `npm run db:push:dev` lagi.
+
+## Aliran uang
+
+Kanvas **🌊 Aliran uang** layar penuh menggambar uang bulan yang dilihat sebagai sungai (`lib/flow.ts`,
+`components/village/ui/AliranView.tsx`). Dibuka dengan klik **kolam** di pulau (waduk desa), kotak *Pengeluaran bulan ini* /
+*Sisa budget* di kartu kiri atas, atau tombol di panel 📊 Bulan ini.
+
+- **Mata air:** Gaji dan Bonus. Kalau yang keluar lebih besar dari pemasukan, selisihnya mengalir dari mata air
+  **🏺 Dari saldo dompet** (juga saat gaji bulan itu belum dicatat). Saldo awal bukan pemasukan, sama dengan Laporan tepira.
+- **Waduk** di tengah, lalu bercabang ke:
+  - tiap **kategori** pengeluaran (terbesar dulu). Label "Rp… / Rp…" = realisasi bersumber gaji / jatah alokasi gaji (sama
+    dengan panel 💰 Gaji, "+🎁" kalau ada yang dibayar dari bonus); **🌊 meluap** kalau realisasi gaji melewati jatah. Tebal
+    pitanya tetap semua sumber. Key kategori lama dari tepira ikut diterjemahkan.
+  - tiap **goal** yang disetori bulan itu (warna pita = warna atap bangunannya; lebih dari 5 goal digabung).
+  - **🐷 Disisihkan**: alokasi tabungan gaji yang belum disetor ke goal. Setoran ke goal dianggap diambil dari alokasi
+    tabungan dulu, jadi tabungan tidak dihitung dobel.
+  - **💧 Belum terpakai**: pemasukan − pengeluaran − tabungan (beda dengan *Sisa budget*, yang hanya menghitung jatah belanja).
+- Tebal pita sebanding nominal. Klik node untuk kartu detail (jatah, berapa dari bonus, jumlah catatan, 🏡 Buka goal).
+- Sidebar: total masuk, bilah Dipakai / Ditabung / Belum terpakai, daftar kategori yang meluap, ganti bulan. `Esc` atau ✕
+  kembali ke desa; selama terbuka scene 3D berhenti merender. Nominal & persentase ikut mode sembunyikan angka.
+- Rincian setoran per goal dihitung server (`summary.savedByGoal`), karena setoran di snapshot dipotong 30 terbaru per goal.
+  Tidak ada tabel atau kolom baru.
 
 ### Kios tempat langganan & batas jajan per tempat
 
@@ -153,6 +221,9 @@ lib/
   wallet-expenses.ts      port 1:1 dari tepira (aturan potong/kembalikan saldo dompet)
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
   quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
+  spoken-amount.ts        🎤 bilangan yang diucapkan → angka ("lima belas ribu" → "Rp15.000") sebelum quick-entry
+  flow.ts                 aliran uang: gaji/bonus → waduk → kategori, goal, disisihkan, belum terpakai + tata letak pita SVG
+  season.ts               musim per bulan, hari ke-N tahun (WIB), pergantian musim berikutnya, kalender kebiasaan, mixHex
   places.ts               peta jajan: pencocokan tempat, pengelompokan per tempat, warna & ikon kategori, ringkasan
                           sidebar (langganan, pertama kali, tanpa tempat), penggabungan penanda berdekatan,
                           belanja per nama tempat (spendByPlaceName)
@@ -167,15 +238,19 @@ components/village/
                           batas jajan per tempat
   kiosks.ts, usePlaces.ts kios yang berdiri untuk snapshot ini; hook belanja per tempat, status batas, kios
   geo.ts                  lokasi sekarang (browser) + nama/pencarian tempat (Nominatim)
+  speech.ts               🎤 Web Speech (SpeechRecognition id-ID): dukungan browser, hook mendengar, pesan galat
+  seasons.ts              tampilan pulau per musim (warna rumput/daun, kolam, buah), pojok musim, useReducedMotion
   useProgress.ts          hook: hari WIB (ganti tengah malam), streak, level/XP, surat minggu ini
   layout.ts               posisi kavling, peti dompet, warung, balai desa, jalur setapak, lampu, bangunan level, preset cuaca
   scene/                  react-three-fiber: Island, Decor, GoalBuilding, WalletChest, Warung, Hall, Villager,
-                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Kiosks (kios langganan)
+                          StreetLamps, Townsfolk (warga), Unlocks (bangunan level), Mailbox, Kiosks (kios langganan),
+                          Seasons (hujan, pelangi, kunang-kunang, layangan, daun, kupu-kupu, bendera, pojok musim)
   scene/labels.ts         label DOM yang diproyeksikan tiap frame (pengganti drei <Html>, aman di React 19)
   map/                    peta jajan: gameStyle (gaya peta desa siang/senja/malam), JajanMap (MapLibre + penanda)
   ui/                     HUD, Panels (Goal / Nabung / Catat / Dompet / Gaji / Riwayat / Bulan ini / Perkembangan desa /
                           Surat), JajanView (peta jajan layar penuh), PlaceLimit (editor & petunjuk batas jajan),
-                          SalaryPanel, PlacePicker, PinGate, Tutorial
+                          SalaryPanel, PlacePicker, PinGate, Tutorial, AliranView (aliran uang layar penuh),
+                          VoiceButton (🎤 catat cepat), JournalPanel (📔 jurnal tahun ini)
   tutorial/               langkah & progres tur pengguna baru (localStorage per user)
 components/landing/       Brand, HeroVisual (poster → 3D saat idle), DemoIsland (potongan scene, kamera berputar, tanpa input)
 components/brand/Logo.tsx LogoMark "Pulau Koin" (inline SVG; versi kecil <= 48 px, versi lengkap di atasnya)
@@ -283,5 +358,6 @@ tidak menangkap klik).
 - Drag untuk memutar, scroll/pinch untuk zoom, klik kanan/⇧+drag untuk geser. 🎯 Reset view mengembalikan sudut awal.
 - Klik bangunan goal → detail goal. Klik peti → dompet. Klik warung → catat pengeluaran. Klik balai desa / si penabung → ringkasan bulan.
 - Klik lampu, warga, bangunan level, atau baris 🔥 di kartu kiri atas → perkembangan desa. Klik kotak pos → surat mingguan.
-- ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`).
+- Klik kolam, atau kotak Pengeluaran / Sisa budget di kartu kiri atas → 🌊 aliran uang.
+- ‹ › di atas untuk berpindah bulan (URL ikut berubah: `?month=&year=`); musim pulau ikut. Klik label bulan → 📔 jurnal.
 - 👁️ / 🙈 untuk menyembunyikan angka (mode privasi), 🪄 cuaca otomatis mengikuti skor kesehatan.

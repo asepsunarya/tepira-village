@@ -61,6 +61,11 @@ a { color: inherit; text-decoration: none; }
 .stat-tile.save b { color: #1f8a63; }
 .stat-tile.spend { border-color: #ffd0d0; }
 .stat-tile.spend b { color: #c23b3b; }
+/* kotak yang membuka aliran uang */
+button.stat-tile.link { position: relative; text-align: left; transition: border-color 0.15s, transform 0.15s; }
+button.stat-tile.link:hover { border-color: #a8dcf3; transform: translateY(-1px); }
+button.stat-tile.link b { padding-right: 18px; }
+button.stat-tile.link::after { content: "🌊"; position: absolute; right: 8px; bottom: 7px; font-size: 12px; opacity: 0.75; }
 .stat-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .stat { font-size: 12px; font-weight: 700; color: var(--ink-soft); display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .stat b { color: var(--ink); font-weight: 900; font-size: 13px; }
@@ -562,6 +567,39 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
   .jv-side { top: calc(48vh - 18px); left: 0; right: 0; bottom: 0; width: auto; border-radius: 22px 22px 0 0; border-bottom: 0; }
 }
 
+/* ---------- aliran uang (layar penuh, sungai dari mata air gaji) ---------- */
+.aliran-view { position: fixed; inset: 0; z-index: 24; background: linear-gradient(180deg, #e3f4fb 0%, #eef8e6 45%, #e2f1d3 100%); }
+.av-stage { position: absolute; top: 16px; right: 16px; bottom: 16px; left: 412px; overflow-y: auto; overflow-x: hidden; padding: 12px; border-radius: var(--radius); background: rgba(255, 255, 255, 0.35); border: 2px solid rgba(255, 255, 255, 0.8); }
+.av-svg { display: block; margin: 0 auto; overflow: visible; }
+.av-link path:first-child { opacity: 0.82; transition: opacity 0.2s; }
+.av-link.dim path:first-child { opacity: 0.18; }
+.av-link.dim .av-current { opacity: 0; }
+.av-current { fill: none; stroke: #fff; stroke-opacity: 0.6; stroke-linecap: round; stroke-dasharray: 2 14; animation: avFlow linear infinite; pointer-events: none; }
+@keyframes avFlow { to { stroke-dashoffset: -32; } }
+.av-node { cursor: pointer; outline: none; transition: opacity 0.2s; }
+.av-node.dim, .av-pool.dim { opacity: 0.35; }
+.av-node:focus-visible .av-bar { stroke: var(--pink); stroke-width: 3; }
+.av-bar { filter: drop-shadow(0 2px 0 rgba(120, 60, 100, 0.18)); }
+.av-label { font-size: 12px; font-weight: 900; fill: var(--ink); paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+.av-sub { font-size: 11px; font-weight: 800; fill: var(--ink-soft); paint-order: stroke; stroke: rgba(255, 255, 255, 0.9); stroke-width: 3px; stroke-linejoin: round; }
+.av-sub.over { fill: #c23b3b; }
+.av-empty { height: 100%; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+.av-empty b { color: var(--ink); font-size: 15px; }
+.av-empty-art { font-size: 54px; }
+.jv-body section.av-hero { background: linear-gradient(135deg, #dff3fb, #e7f6df); box-shadow: 0 4px 0 #cfe6d6; }
+.av-split { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: #f1e4ea; border: 2px solid #fff; }
+.av-split span { min-width: 4px; }
+.av-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 4px; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.av-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 3px; border-radius: 3px; vertical-align: -1px; }
+.jv-body section.av-picked { border-color: #a8dcf3; box-shadow: 0 3px 0 #d6edf7; }
+@media (max-width: 760px) {
+  .av-stage { top: 0; right: 0; left: 0; bottom: auto; height: 52vh; padding: 10px 6px 26px; border-radius: 0; border: 0; }
+  .aliran-view .jv-side { top: calc(52vh - 18px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .av-current { animation: none; }
+}
+
 .place-picker { display: flex; flex-direction: column; gap: 4px; }
 .place-picker > label { font-size: 12px; font-weight: 800; color: var(--ink-soft); }
 .place-row { display: flex; gap: 6px; align-items: center; }
@@ -588,6 +626,16 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
 .qchip.warn { background: #fff0c9; border-color: #f6dca0; color: #a87a12; }
 .qchip.over { background: #ffdede; border-color: #ffc9c9; color: #c23b3b; }
 .quick-preview small { font-size: 10px; }
+/* 🎤 catat lewat suara di samping kolom catat cepat */
+.quick-row { display: flex; gap: 6px; align-items: center; }
+.quick-row input { flex: 1; min-width: 0; }
+.quick-row .icon-btn.mic { width: 40px; height: 40px; font-size: 18px; background: #fff; border: 2px solid #f6dca0; border-radius: 12px; }
+.quick-row .icon-btn.mic:hover { background: #fff3d6; }
+.quick-row .icon-btn.mic.on { background: #ffdede; border-color: #ffc9c9; animation: micPulse 1.2s ease-out infinite; }
+@keyframes micPulse { 0% { box-shadow: 0 0 0 0 rgba(243, 195, 91, 0.6); } 100% { box-shadow: 0 0 0 10px rgba(243, 195, 91, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .quick-row .icon-btn.mic.on { animation: none; }
+}
 
 /* ---------- tutorial ---------- */
 .hud-brand .tour-replay { margin-left: auto; }
@@ -712,4 +760,58 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
   .tour-burst { display: none; }
   .tour-card, .tour-card.celebrate { animation: none; }
   .tour-card.center, .tour-card.center.celebrate { animation: none; }
+}
+
+/* ---------- jurnal & musim ---------- */
+/* Label bulan di kontrol atas = tombol jurnal. Emoji musim di ATAS nama bulan, bukan di sampingnya:
+   kontrol atas di 1400 px hanya punya sisa ±6 px untuk "September 2026", jadi lebar tombol harus tetap. */
+.seg-btn { height: 40px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; border-radius: 16px; transition: background 0.15s; }
+.seg-season { font-size: 12px; line-height: 1; }
+.seg-btn:hover { background: #fff; }
+.seg-btn.on { background: var(--pink-soft); color: #c2457d; box-shadow: inset 0 0 0 2px #ffbdd8; }
+.journal-season { display: flex; gap: 12px; align-items: flex-start; background: #fff; border-radius: 16px; padding: 12px; border: 2px solid #f6ebf0; }
+.journal-season.hujan { background: #e6f2fb; border-color: #c9e3f4; }
+.journal-season.panen { background: #fff5d6; border-color: #f6e0a0; }
+.journal-season.kemarau { background: #ffeedd; border-color: #f8d6ae; }
+.journal-season.mangga { background: #f1f8dc; border-color: #dbe9a8; }
+.journal-season-emoji { font-size: 34px; line-height: 1; flex-shrink: 0; }
+.journal-season b { font-size: 16px; font-weight: 900; }
+.journal-season p { margin: 4px 0 6px; font-size: 13px; font-weight: 700; }
+.journal-season small { font-size: 11px; }
+.journal-viewing { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-color: #ffbdd8; }
+.journal-viewing span { flex: 1 1 180px; }
+.season-strip { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; }
+.season-chip { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; padding: 5px 0 4px; border-radius: 10px; border: 2px solid transparent; transition: transform 0.15s; }
+.season-chip span { font-size: 14px; line-height: 1.15; }
+.season-chip small { font-size: 9px; font-weight: 900; color: var(--ink-soft); }
+.season-chip.hujan { background: #e6f2fb; }
+.season-chip.panen { background: #fff5d6; }
+.season-chip.kemarau { background: #ffeedd; }
+.season-chip.mangga { background: #f1f8dc; }
+.season-chip:hover { transform: translateY(-1px); }
+.season-chip.on { border-color: #ff7eb3; }
+.season-chip.on small { color: #c2457d; }
+.season-chip.now::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #c2457d; }
+.habit-grid { display: flex; flex-direction: column; gap: 2px; background: #fff; border-radius: 14px; padding: 8px 6px; border: 2px solid #f6ebf0; }
+/* 360 px: isi panel ±300 px, titik ±6 px */
+.habit-row { display: grid; grid-template-columns: 24px repeat(31, minmax(0, 1fr)) 20px; gap: 1px; align-items: center; }
+.habit-row > small { font-size: 9px; font-weight: 900; color: var(--ink-soft); }
+.habit-row > .habit-count { grid-column: -2; text-align: right; }
+.habit-dot { display: block; width: 100%; max-width: 9px; aspect-ratio: 1; justify-self: center; border-radius: 50%; background: #f1eaee; }
+.habit-dot.recorded { background: #6cc8ad; }
+.habit-dot.nospend { background: #9aa6ee; }
+.habit-dot.missed { background: #e2cdd7; }
+.habit-dot.before { background: #f1eaee; }
+.habit-dot.future { background: transparent; box-shadow: inset 0 0 0 1px #e4d8df; }
+.habit-dot.today { box-shadow: 0 0 0 1.5px #ff7eb3; }
+.habit-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 4px; font-size: 11px; font-weight: 800; color: var(--ink-soft); }
+.habit-legend .habit-dot { display: inline-block; width: 8px; height: 8px; vertical-align: -1px; }
+.journal-fx { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 14px; padding: 8px 10px; border: 2px solid #f6ebf0; }
+.journal-fx .muted { flex: 1; }
+@media (max-width: 900px) {
+  .seg-btn { height: 34px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seg-btn, .season-chip { transition: none; }
+  .season-chip:hover { transform: none; }
 }

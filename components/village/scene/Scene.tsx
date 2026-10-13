@@ -3,8 +3,11 @@
 import { useEffect, useRef, type ComponentRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
+import { seasonForMonth } from "@/lib/season";
 import { TIME_PRESETS, autoTime } from "../layout";
+import { SEASON_LOOK } from "../seasons";
 import { useVillage } from "../store";
+import { isFullscreenPanel } from "../types";
 import Island from "./Island";
 import Path from "./Path";
 import Decor from "./Decor";
@@ -20,6 +23,7 @@ import Mailbox from "./Mailbox";
 import Kiosks from "./Kiosks";
 import { Clouds } from "./Effects";
 import LabelProjector from "./LabelProjector";
+import SeasonFx from "./Seasons";
 
 function Goals({ lit }: { lit: boolean }) {
   const goals = useVillage((s) => s.snapshot?.goals ?? []);
@@ -52,9 +56,14 @@ export default function Scene() {
   const goalCount = useVillage((s) => s.snapshot?.goals.length ?? 0);
   const walletCount = useVillage((s) => s.snapshot?.wallets.length ?? 0);
   const setPanel = useVillage((s) => s.setPanel);
-  // Selama peta jajan terbuka, desa berhenti merender: peta punya kanvas WebGL sendiri.
-  const paused = useVillage((s) => s.panel === "jajan");
+  // Selama tampilan layar penuh terbuka (peta jajan, aliran uang), desa berhenti merender.
+  const paused = useVillage((s) => isFullscreenPanel(s.panel));
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
+  // Musim mengikuti bulan yang dilihat (seperti cuaca & kios). Hanya Scene yang membacanya dari
+  // store; Island/Decor/Unlocks menerimanya lewat prop supaya landing tetap seperti poster.
+  const month = useVillage((s) => s.snapshot?.period.month ?? 1);
+  const season = seasonForMonth(month);
+  const look = SEASON_LOOK[season];
 
   const time = timeSetting === "auto" ? autoTime(health) : timeSetting;
   const p = TIME_PRESETS[time];
@@ -111,20 +120,22 @@ export default function Scene() {
         shadow-normalBias={0.03}
       />
 
-      <Island sea={p.sea} />
+      {/* Kolam = waduk desa: klik untuk melihat aliran uang bulan ini. */}
+      <Island sea={p.sea} grass={look.grass} pondScale={look.pondScale} onPond={() => setPanel("aliran")} />
       <Path />
-      <Decor usedPlots={goalCount} walletCount={walletCount} reserved />
+      <Decor usedPlots={goalCount} walletCount={walletCount} reserved season={season} />
       <Hall lit={p.windows} />
       <Warung lit={p.windows} />
       <Goals lit={p.windows} />
       <Wallets />
       <StreetLamps night={p.windows} />
       <Mailbox />
-      <Unlocks night={p.windows} />
+      <Unlocks night={p.windows} grass={look.grass} />
       <Kiosks lit={p.windows} />
       <Villager />
       <Townsfolk />
       <LabelProjector />
+      <SeasonFx season={season} month={month} time={time} />
       {time === "cloudy" && <Clouds count={9} tint="#f4f6fa" opacity={0.95} />}
       {time === "day" && <Clouds count={4} />}
       {time === "sunset" && <Clouds count={5} tint="#ffd9c4" opacity={0.85} />}

@@ -177,3 +177,37 @@ test("tempat: huruf seperti diketik, kategori dari nama tempat kalau catatannya 
   // angka tanpa satuan di nama tempat bukan nominal
   assert.equal(parseAt("roti 15000 @indomaret 24 jam").amount, 15_000);
 });
+
+test("suara: rupiah = nominal jelas, rebu, dan kalimat hasil normalizer", () => {
+  const p = parse("parkir 500 rupiah");
+  assert.equal(p.amount, 500);
+  assert.equal(p.assumedThousands, false);
+  assert.equal(p.note, "Parkir");
+  assert.equal(parse("bakso 15.000 rupiah").amount, 15_000);
+  assert.equal(parse("bakso 15.000 rupiah").note, "Bakso");
+  assert.equal(parse("bakso 15 ribu rupiah gopay").note, "Bakso");
+  assert.equal(parse("bakso 15 ribu rupiah gopay").walletId, 2);
+  assert.equal(parse("bakso 15 rebu").amount, 15_000);
+  assert.equal(parse("bakso 15 rebu").note, "Bakso");
+  assert.equal(parse("Bakso Rp15.000 pakai gopay.").note, "Bakso");
+  assert.equal(parse("3 hari yang lalu ojek Rp18.000").daysAgo, 3);
+  assert.equal(parse("parkir Rp500").amount, 500);
+});
+
+test("suara: nama dompet camelCase terbaca walau diucapkan terpisah", () => {
+  const wallets: QuickWallet[] = [...WALLETS, { id: 5, name: "ShopeePay", type: "e-wallet" }];
+  assert.equal(parse("bakso 15rb pakai go pay", wallets).walletId, 2);
+  assert.equal(parse("bakso 15rb pakai go pay", wallets).note, "Bakso");
+  assert.equal(parse("bakso 15rb shopee pay", wallets).walletId, 5);
+  assert.equal(parse("bakso 15rb gopay", wallets).walletId, 2);
+});
+
+test("suara: nama layanan yang terucap terpisah", () => {
+  assert.equal(parse("grab food 45rb").categoryKey, "makan_harian");
+  assert.equal(parse("shopee food 30rb").categoryKey, "makan_harian");
+  assert.equal(parse("go food 30rb").categoryKey, "makan_harian");
+  assert.equal(parse("go ride 15rb").categoryKey, "transport");
+  assert.equal(parse("grab 25rb").categoryKey, "transport");
+  assert.equal(parse("wi fi 300rb").categoryKey, "pulsa_internet");
+  assert.equal(parse("e toll 100rb").categoryKey, "transport");
+});

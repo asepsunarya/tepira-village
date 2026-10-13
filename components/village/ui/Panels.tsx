@@ -29,6 +29,7 @@ import {
   todayInputValue
 } from "@/lib/format";
 import { parseQuickEntry, type QuickEntry } from "@/lib/quick-entry";
+import { normalizeSpokenAmounts } from "@/lib/spoken-amount";
 import { LIMIT_COLOR, LIMIT_WORD, findPlaceLimit, limitStatus, type LimitLevel } from "@/lib/place-limits";
 import { normalizePlaceName, spendByPlaceName } from "@/lib/places";
 import { useMoneyVisible, useVillage } from "../store";
@@ -38,8 +39,12 @@ import { AmountInput, CATEGORY_GROUPS } from "./inputs";
 import SalaryPanel, { CategoryBudgetHint } from "./SalaryPanel";
 import PlacePicker, { NO_PLACE, placeInput, type PlaceValue } from "./PlacePicker";
 import JajanView from "./JajanView";
+import AliranView from "./AliranView";
+import JournalPanel from "./JournalPanel";
 import { PlaceLimitHint } from "./PlaceLimit";
 import { useLimitViews } from "../usePlaces";
+import { useVoiceInput } from "../speech";
+import VoiceButton from "./VoiceButton";
 
 const NO_PLACES: KnownPlace[] = [];
 const NO_EXPENSES: ExpenseView[] = [];
@@ -565,9 +570,32 @@ function SpendPanel() {
     base.current.date = v;
   };
 
+  // 🎤 Catat lewat suara: ucapan dinormalkan ("lima belas ribu" → "Rp15.000") lalu diperlakukan seperti
+  // kalimat yang diketik. Tidak pernah menyimpan sendiri: pratinjau dicek dulu, lalu Enter / 💸 Catat.
+  const quickInput = useRef<HTMLInputElement>(null);
+  /** teks yang sudah diketik sebelum menekan 🎤; ucapan ditambahkan di belakangnya */
+  const voicePrefix = useRef("");
+  const voice = useVoiceInput({
+    onText: (spoken, final) => {
+      typeQuick([voicePrefix.current, normalizeSpokenAmounts(spoken)].filter(Boolean).join(" "));
+      // Desktop: fokus balik ke kolom supaya Enter langsung menyimpan. Di HP jangan (keyboard muncul).
+      if (final && window.matchMedia("(pointer: fine)").matches) quickInput.current?.focus();
+    },
+    onError: setQuickHint,
+    // Esc: kembali ke isian sebelum bicara (yang setengah terdengar tidak boleh tertinggal di form).
+    onCancel: () => typeQuick(voicePrefix.current)
+  });
+  const cancelVoice = voice.cancel;
+  // Angka disembunyikan: kolomnya hilang, jadi ucapan tidak boleh terus mengisi nominal.
+  useEffect(() => {
+    if (!moneyVisible) cancelVoice();
+  }, [moneyVisible, cancelVoice]);
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (amount <= 0 || !walletId) return;
+    // Hasil suara yang datang sesudah ini jangan mengisi ulang form dengan catatan yang baru disimpan.
+    voice.cancel();
     const fromQuick = Boolean(quick.trim());
     const ok = await spend({ amount, category, note, source, date, walletId, place: placeInput(place) });
     if (ok) {
@@ -602,9 +630,11 @@ function SpendPanel() {
         {/* Ikut mode sembunyikan angka: nominal yang diketik ikut terlihat, jadi kolomnya ditutup juga. */}
         {moneyVisible && (
           <div className="quick-entry">
-            <label>
-              ⚡ Catat cepat
+            <label htmlFor="quick-input">⚡ Catat cepat</label>
+            <div className="quick-row">
               <input
+                id="quick-input"
+                ref={quickInput}
                 value={quick}
                 onChange={(e) => typeQuick(e.target.value)}
                 onKeyDown={(e) => {
@@ -621,7 +651,15 @@ function SpendPanel() {
                 enterKeyHint="send"
                 aria-describedby="quick-preview"
               />
-            </label>
+              <VoiceButton
+                voice={voice}
+                disabled={loading}
+                onStart={() => {
+                  voicePrefix.current = quick.trim();
+                  setQuickHint(null);
+                }}
+              />
+            </div>
             {parsed && (
               <QuickPreview
                 parsed={parsed}
@@ -636,7 +674,13 @@ function SpendPanel() {
             )}
             {parsed?.place && placeHint}
             {quickHint && <p className="cat-hint warn">{quickHint}</p>}
-            {!quick && <small className="muted">Ketik seperti chat lalu Enter. Isian di bawah ikut terisi dan masih bisa diubah.</small>}
+            {!quick && (
+              <small className="muted">
+                Ketik seperti chat lalu Enter
+                {voice.supported ? <>, atau tekan 🎤 lalu ucapkan misalnya &ldquo;bakso lima belas ribu pakai gopay&rdquo;</> : null}. Isian di
+                bawah ikut terisi dan masih bisa diubah.
+              </small>
+            )}
           </div>
         )}
         {sameMonth && summary && summary.budget.status !== "NO_BUDGET" && (
@@ -1151,6 +1195,9 @@ function MonthPanel() {
           <button className="pill" onClick={() => setPanel("jajan")}>
             🗺️ Peta jajan
           </button>
+          <button className="pill" onClick={() => setPanel("aliran")}>
+            🌊 Aliran uang
+          </button>
         </div>
         <p className="muted small">Bonus dan saldo awal masih diatur lewat tepira.id (halaman Bonus / Saldo Awal).</p>
       </section>
@@ -1247,6 +1294,7 @@ function VillagePanel() {
       <div className="chips">
         <button className="pill" onClick={() => setPanel("spend")}>💸 Catat pengeluaran</button>
         <button className="pill" onClick={() => setPanel("save")}>🪙 Nabung</button>
+        <button className="pill" onClick={() => setPanel("journal")}>📔 Jurnal tahun ini</button>
       </div>
 
       <section>
@@ -1366,7 +1414,9 @@ const TITLES: Record<Exclude<ReturnType<typeof useVillage.getState>["panel"], nu
   month: "📊 Bulan ini",
   village: "🏝️ Perkembangan desa",
   letter: "💌 Surat dari Cyrene",
-  jajan: "🗺️ Peta jajan"
+  jajan: "🗺️ Peta jajan",
+  aliran: "🌊 Aliran uang",
+  journal: "📔 Jurnal tahun ini"
 };
 
 export default function Panels() {
@@ -1375,6 +1425,7 @@ export default function Panels() {
   if (!panel) return null;
   // Peta jajan tampil layar penuh, bukan panel samping.
   if (panel === "jajan") return <JajanView onClose={() => setPanel(null)} />;
+  if (panel === "aliran") return <AliranView onClose={() => setPanel(null)} />;
   return (
     <PanelShell title={TITLES[panel]} onClose={() => setPanel(null)}>
       {panel === "goals" && <GoalsPanel />}
@@ -1386,6 +1437,7 @@ export default function Panels() {
       {panel === "month" && <MonthPanel />}
       {panel === "village" && <VillagePanel />}
       {panel === "letter" && <LetterPanel />}
+      {panel === "journal" && <JournalPanel />}
     </PanelShell>
   );
 }
