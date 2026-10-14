@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import type { Snapshot } from "@/lib/game";
 import { useVillage } from "./store";
@@ -9,6 +9,8 @@ import Panels from "./ui/Panels";
 import PinGate from "./ui/PinGate";
 import LabelLayer from "./ui/LabelLayer";
 import Tutorial, { useTourOn } from "./ui/Tutorial";
+import { useWibToday } from "./useProgress";
+import { usePushBridge } from "./usePush";
 
 // Canvas WebGL hanya di browser.
 const Scene = dynamic(() => import("./scene/Scene"), {
@@ -16,12 +18,30 @@ const Scene = dynamic(() => import("./scene/Scene"), {
   loading: () => <div className="scene-loading">Menyiapkan desa…</div>
 });
 
+/**
+ * Hari WIB berganti selagi desa terbuka (lewat tengah malam): Pak Pos memproses jatuh tempo hari baru.
+ * Tidak saat pertama dibuka, karena halaman sudah memprosesnya di server. Hari baru ikut dikirim: kalau
+ * server masih di hari kemarin (jam perangkat lebih cepat), store mencoba lagi sebentar lagi. Tab kembali
+ * dilihat setelah lama: lihat syncRecurringIfStale di store.
+ */
+function useRecurringSync() {
+  const today = useWibToday();
+  const seen = useRef(today);
+  const syncRecurring = useVillage((s) => s.syncRecurring);
+  useEffect(() => {
+    if (seen.current === today) return;
+    seen.current = today;
+    void syncRecurring(today);
+  }, [today, syncRecurring]);
+}
+
 /** `isNewUser` dihitung server sekali saat halaman dimuat (lihat isNewVillager di lib/snapshot.ts). */
 export default function VillageApp({ initial, isNewUser }: { initial: Snapshot; isNewUser: boolean }) {
   const hydrate = useVillage((s) => s.hydrate);
   // Snapshot milik user lain / sisa desa contoh landing belum dihitung "terhidrasi".
   const hydrated = useVillage((s) => s.snapshot !== null && s.snapshot.user.email === initial.user.email);
   const tourOn = useTourOn();
+  useRecurringSync();
 
   // Hidrasi sekali per sesi/user. Snapshot berikutnya datang dari server action,
   // jadi re-render halaman (mis. setelah navigasi) tidak boleh menimpa bulan yang dipilih.
@@ -29,6 +49,9 @@ export default function VillageApp({ initial, isNewUser }: { initial: Snapshot; 
     const current = useVillage.getState().snapshot;
     if (!current || current.user.email !== initial.user.email) hydrate(initial);
   }, [initial, hydrate]);
+
+  // 🔔 Pengingat: klik notifikasi → panelnya, dan langganan perangkat ini diperbarui diam-diam.
+  usePushBridge(initial.user.email);
 
   return (
     <div className={`app ${tourOn ? "tour-on" : ""}`}>

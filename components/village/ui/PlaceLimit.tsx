@@ -7,10 +7,11 @@ import { useVillage } from "../store";
 import { AmountInput } from "./inputs";
 import { Money } from "./Money";
 
-/** Atur/ubah/hapus batas jajan bulanan untuk satu tempat (disimpan di perangkat ini). */
+/** Atur/ubah/hapus batas jajan bulanan untuk satu tempat (tersimpan di akun, ikut ke perangkat lain). */
 export function PlaceLimitEditor({ name }: { name: string }) {
   const current = useVillage((s) => findPlaceLimit(s.placeLimits, name));
   const setPlaceLimit = useVillage((s) => s.setPlaceLimit);
+  const synced = useVillage((s) => s.syncBase.available);
   const [editing, setEditing] = useState(false);
   const [amount, setAmount] = useState(0);
   if (!editing) {
@@ -66,7 +67,11 @@ export function PlaceLimitEditor({ name }: { name: string }) {
           Batal
         </button>
       </div>
-      <small className="muted">Disimpan di perangkat ini, belum ikut ke perangkat lain.</small>
+      <small className="muted">
+        {synced
+          ? "Tersimpan di akunmu, ikut ke perangkat lain."
+          : "Untuk sementara disimpan di perangkat ini, nanti dikirim ke akunmu begitu server siap."}
+      </small>
     </form>
   );
 }

@@ -18,6 +18,7 @@ import Hall from "./Hall";
 import Villager from "./Villager";
 import StreetLamps from "./StreetLamps";
 import Townsfolk from "./Townsfolk";
+import Postman from "./Postman";
 import Unlocks from "./Unlocks";
 import Mailbox from "./Mailbox";
 import Kiosks from "./Kiosks";
@@ -134,6 +135,7 @@ export default function Scene() {
       <Kiosks lit={p.windows} />
       <Villager />
       <Townsfolk />
+      <Postman />
       <LabelProjector />
       <SeasonFx season={season} month={month} time={time} />
       {time === "cloudy" && <Clouds count={9} tint="#f4f6fa" opacity={0.95} />}

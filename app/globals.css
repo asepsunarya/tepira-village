@@ -172,6 +172,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important;
 .add-form { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
 .add-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
 .add-form label.check { flex-direction: row; align-items: center; gap: 8px; }
+.add-form label.check input[type="checkbox"], .bill-edit label.check input[type="checkbox"] { width: auto; flex-shrink: 0; }
 .add-form input, .add-form select, .add-form textarea, .amount-input, .pin-card input { border: 2px solid #f1e4ea; border-radius: 12px; padding: 8px 10px; background: #fff8fb; font-weight: 700; font-size: 14px; font-family: inherit; resize: vertical; width: 100%; outline: none; }
 .add-form input:focus, .add-form select:focus, .add-form textarea:focus, .amount-input:focus-within, .pin-card input:focus { border-color: #ffbdd8; }
 .amount-input { display: flex; align-items: center; gap: 6px; font-weight: 900; color: var(--ink); }
@@ -814,4 +815,65 @@ button.jv-row:hover { border-color: #ffbdd8; transform: translateY(-1px); }
 @media (prefers-reduced-motion: reduce) {
   .seg-btn, .season-chip { transition: none; }
   .season-chip:hover { transform: none; }
+}
+
+/* ---------- tagihan & setoran rutin (Pak Pos) ---------- */
+.rutin-total { margin: -4px 2px 0; }
+.rutin-row, .bill-row { display: flex; gap: 10px; background: #fff; border-radius: 14px; padding: 9px 10px; border: 2px solid #f6ebf0; }
+.rutin-row { margin-bottom: 6px; }
+.rutin-row.paused, .rutin-row.ended { opacity: 0.75; border-style: dashed; }
+.rutin-icon { font-size: 18px; width: 30px; height: 30px; border-radius: 10px; background: #fff4e6; display: grid; place-items: center; flex-shrink: 0; }
+.rutin-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rutin-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+.rutin-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rutin-head .money { font-weight: 900; white-space: nowrap; }
+.rutin-main small { font-size: 11px; font-weight: 700; }
+.rutin-next { color: var(--ink); }
+.rutin-main .pace-chip { align-self: flex-start; margin-top: 2px; }
+.repeat-fields { display: flex; flex-direction: column; gap: 10px; background: #fff8ec; border: 2px dashed #f3d9a6; border-radius: 14px; padding: 10px; }
+.rutin-preview { font-size: 11px; }
+.rutin-chips { margin-bottom: -4px; }
+.rutin-chip { display: inline-block; margin-left: 4px; font-size: 10px; padding: 0 5px; border-radius: 999px; background: #fff4e6; vertical-align: 1px; }
+button.rutin-mini { width: 100%; text-align: left; cursor: pointer; }
+button.rutin-mini:hover { border-color: #f3d9a6; }
+.mailbox-bills { display: flex; flex-direction: column; gap: 12px; }
+.mailbox-bills > .pill { align-self: flex-start; }
+.bill-all { align-self: flex-start; margin-bottom: 6px; }
+.bill-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.bill-group-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.bill-group-head .link-btn { padding: 0; }
+.bill-row { flex-direction: column; gap: 8px; border-color: #f3d9a6; background: #fffdf6; }
+.bill-row.blocked { border-color: #ffd0d0; }
+.bill-top { display: flex; gap: 10px; }
+.bill-late { color: #a87a12; }
+.bill-warn { color: #c23b3b; font-weight: 800; }
+.bill-edit { display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 12px; background: #fff8ec; }
+.bill-edit label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 800; color: var(--ink-soft); }
+.bill-edit label.check { flex-direction: row; align-items: center; gap: 8px; }
+.bill-edit select { border: 2px solid #f1e4ea; border-radius: 12px; padding: 6px 8px; background: #fff; font-weight: 700; font-family: inherit; }
+.bill-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bill-actions .link-btn { padding: 0 4px; }
+.letter-title { margin: 4px 0 -4px; }
+.link-btn.inline { padding: 0; display: inline; }
+.mail-pills { display: flex; gap: 4px; }
+.mail-pill.bill { background: #fff4dc; box-shadow: 0 3px 10px rgba(233, 196, 106, 0.5), inset 0 0 0 1.5px #f3d9a6; }
+button.pill.mail-pill { align-self: flex-start; color: var(--ink); }
+.stat.mail { background: #fff4dc; border-radius: 999px; padding: 2px 8px; box-shadow: inset 0 0 0 1.5px #f3d9a6; color: #8a5a1a; cursor: pointer; }
+.stat.mail.on, .stat.mail:hover { box-shadow: inset 0 0 0 2px #e9c46a; }
+@media (prefers-reduced-motion: reduce) {
+  .mail-pill { animation: none; }
+}
+
+/* 🔔 Pengingat (ReminderSection, panel Perkembangan desa) */
+.reminders { display: flex; flex-direction: column; gap: 8px; }
+.reminders .journal-fx + .journal-fx { margin-top: -2px; }
+.reminder-title { display: block; color: var(--ink); font-size: 12px; margin-bottom: 1px; }
+.reminder-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.reminders .pill:disabled { opacity: 0.6; cursor: wait; transform: none; }
+.reminder-devices { display: flex; flex-direction: column; gap: 4px; }
+.reminder-devices .pill { display: inline-flex; align-items: center; gap: 4px; }
+.reminder-forget { border: 0; background: none; padding: 0 0 0 2px; font: inherit; color: var(--ink-soft); cursor: pointer; }
+.reminder-forget:hover { color: #c23b3b; }
+@media (max-width: 640px) {
+  .reminder-here { flex-wrap: wrap; }
 }

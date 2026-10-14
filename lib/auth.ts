@@ -56,6 +56,14 @@ export async function getRequiredUserId() {
   return userId;
 }
 
+/** Untuk server action: tanpa sesi = error dengan pesan yang tampil di desa (bukan redirect). */
+export async function requireActionUserId() {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) throw new Error("Sesi habis. Silakan login lagi.");
+  return userId;
+}
+
 /**
  * Identik dengan tepira: data lama tanpa userId tetap dianggap milik user
  * yang sedang login (kompatibilitas data sebelum Google login ditambahkan).

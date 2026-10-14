@@ -6,9 +6,8 @@ import type { GoalView, WalletView } from "@/lib/game";
 import { buildStage, levelFor, villageXp } from "@/lib/game";
 import { formatCompact } from "@/lib/format";
 import { createDemoSnapshot, isDemoSnapshot, withDemoContribution } from "@/lib/demo-snapshot";
-import { NO_LIMITS } from "@/lib/place-limits";
 import { TIME_PRESETS, autoTime, goalPalette, goalPlot } from "@/components/village/layout";
-import { useVillage } from "@/components/village/store";
+import { NO_SYNC_VIEW, useVillage } from "@/components/village/store";
 import Island from "@/components/village/scene/Island";
 import Path from "@/components/village/scene/Path";
 import Decor from "@/components/village/scene/Decor";
@@ -32,6 +31,8 @@ const EMPTY_GOALS: GoalView[] = [];
 const EMPTY_WALLETS: WalletView[] = [];
 
 // State store yang disentuh demo; dikosongkan lagi saat unmount supaya /village hidrasi bersih.
+// Data desa (lampu nol pengeluaran, batas jajan, …) ikut dikosongkan: demo tidak boleh memakai milik
+// user yang barusan membuka /village, dan tanpa server (LOCAL_SYNC) store tidak pernah mengirim apa pun.
 const clean = () => ({
   panel: null,
   selectedGoalId: null,
@@ -40,7 +41,7 @@ const clean = () => ({
   villagerTarget: null,
   celebrateGoalId: null,
   jajanFocus: null,
-  placeLimits: NO_LIMITS
+  ...NO_SYNC_VIEW
 });
 
 /** Urutan goal yang "dibangun" demo (indeks kavling): Laptop → Sepeda → Dana darurat. */

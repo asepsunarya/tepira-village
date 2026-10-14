@@ -2,6 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
 import { ACTIVITY_WINDOW_DAYS, DAY_MS, healthStatusFor, wibDay, type SalaryView, type Snapshot } from "@/lib/game";
 import { knownPlacesFrom, normalizePlaceName } from "@/lib/places";
+import { wibDateParts } from "@/lib/season";
+import { loadVillageSync } from "@/lib/village-state";
+import { autoPostedLinks, loadRecurring, recurringLinks } from "@/lib/recurring-server";
 
 const clamp = (v: number, min = 0, max = 100) => Math.max(min, Math.min(max, v));
 
@@ -9,10 +12,14 @@ export function monthRange(month: number, year: number) {
   return { start: new Date(year, month - 1, 1), end: new Date(year, month, 1) };
 }
 
+/**
+ * Bulan bawaan = bulan WIB, bukan bulan jam server (UTC di Vercel): antara 00:00–07:00 WIB tanggal 1,
+ * tagihan rutin "tgl 1" (sewa) sudah tercatat di bulan baru dan harus terlihat.
+ */
 export function normalizePeriod(month?: number, year?: number) {
-  const now = new Date();
-  const m = month && month >= 1 && month <= 12 ? Math.floor(month) : now.getMonth() + 1;
-  const y = year && year >= 2000 && year <= 2100 ? Math.floor(year) : now.getFullYear();
+  const now = wibDateParts(wibDay(Date.now()));
+  const m = month && month >= 1 && month <= 12 ? Math.floor(month) : now.month;
+  const y = year && year >= 2000 && year <= 2100 ? Math.floor(year) : now.year;
   return { month: m, year: y };
 }
 
@@ -61,7 +68,8 @@ export async function isNewVillager(userId: string) {
 export async function buildSnapshot(userId: string, month: number, year: number): Promise<Snapshot> {
   const ownerWhere = userOwnedWhere(userId);
   const { start, end } = monthRange(month, year);
-  const activitySince = new Date(Date.now() - (ACTIVITY_WINDOW_DAYS + 1) * DAY_MS);
+  const now = Date.now();
+  const activitySince = new Date(now - (ACTIVITY_WINDOW_DAYS + 1) * DAY_MS);
   const placesSince = new Date(Date.now() - 366 * DAY_MS);
 
   const [
@@ -76,7 +84,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
     activityExpenses,
     insight,
     placeRows,
-    earlierPlaceRows
+    earlierPlaceRows,
+    sync,
+    recurring,
+    autoPosted
   ] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true, image: true } }),
     prisma.goal.findMany({
@@ -106,8 +117,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       include: { allocations: { orderBy: { id: "asc" } } },
       orderBy: [{ year: "desc" }, { month: "desc" }]
     }),
-    // Tanggal saja, untuk lampu streak & warga (computeStreak di lib/game.ts).
-    prisma.expense.findMany({ where: { date: { gte: activitySince }, ...ownerWhere }, select: { date: true } }),
+    // Tanggal saja, untuk lampu streak & warga (computeStreak di lib/game.ts). id untuk menyaring yang
+    // dicatat otomatis oleh Pak Pos (autoPostedLinks): relasinya tidak di-include karena tabel
+    // RecurringOccurrence bisa belum ada (jaring urutan rilis).
+    prisma.expense.findMany({ where: { date: { gte: activitySince }, ...ownerWhere }, select: { id: true, date: true } }),
     // Surat mingguan: insight terbaru sampai bulan yang dilihat. Dibungkus AND supaya OR milik
     // userOwnedWhere tidak tertimpa OR periode.
     prisma.weeklyFinancialInsight.findFirst({
@@ -135,8 +148,20 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       where: { ...ownerWhere, date: { gte: new Date(start.getTime() - 365 * DAY_MS), lt: start }, placeName: { not: null } },
       orderBy: { placeName: "asc" },
       take: 2000
-    })
+    }),
+    // Data desa yang sinkron antar perangkat. Tabelnya milik migrasi tepira: kalau belum ada,
+    // hasilnya kosong + available:false (desa jalan dari localStorage), tidak melempar error.
+    loadVillageSync(userId),
+    // Tagihan & setoran rutin. Sama: tabel belum ada → kosong + available:false.
+    loadRecurring(userId, now),
+    autoPostedLinks(userId, wibDay(activitySince))
   ]);
+
+  // Tanda 🔁 di Riwayat: pengeluaran bulan ini & setoran yang dikirim ke browser.
+  const shownContributions = goals.flatMap((g) => g.contributions.slice(0, 30).map((c) => c.id));
+  const links = recurring.available
+    ? await recurringLinks(userId, expenses.map((e) => e.id), shownContributions)
+    : { expenses: new Map(), contributions: new Map() };
 
   const totalIncome = (salary?.amount || 0) + (bonus?.amount || 0);
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
@@ -185,8 +210,10 @@ export async function buildSnapshot(userId: string, month: number, year: number)
   const totalSaved = allContributions.reduce((s, c) => s + c.amount, 0);
 
   const activity = new Set<number>();
-  for (const e of activityExpenses) activity.add(wibDay(e.date));
-  for (const c of allContributions) if (c.date >= activitySince) activity.add(wibDay(c.date));
+  for (const e of activityExpenses) if (!autoPosted.expenseIds.has(e.id)) activity.add(wibDay(e.date));
+  for (const c of allContributions) {
+    if (c.date >= activitySince && !autoPosted.contributionIds.has(c.id)) activity.add(wibDay(c.date));
+  }
 
   return {
     user: { name: user?.name ?? null, email: user?.email ?? null, image: user?.image ?? null },
@@ -206,7 +233,8 @@ export async function buildSnapshot(userId: string, month: number, year: number)
           id: c.id,
           amount: c.amount,
           note: c.note,
-          date: c.date.toISOString()
+          date: c.date.toISOString(),
+          recurring: links.contributions.get(c.id) ?? null
         }))
       };
     }),
@@ -230,7 +258,8 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       walletName: e.wallet?.name ?? null,
       placeName: e.placeName,
       latitude: e.latitude,
-      longitude: e.longitude
+      longitude: e.longitude,
+      recurring: links.expenses.get(e.id) ?? null
     })),
     summary: {
       month,
@@ -284,6 +313,8 @@ export async function buildSnapshot(userId: string, month: number, year: number)
       debts: walletDebts,
       netWorth: walletAssets - walletDebts
     },
+    sync,
+    recurring,
     pinRequired: Boolean(process.env.APP_PIN),
     devLogin: isDevLoginEnabled,
     generatedAt: new Date().toISOString()

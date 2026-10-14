@@ -38,8 +38,8 @@ const dayLabel = (day: number, options: Intl.DateTimeFormatOptions) =>
 
 /**
  * Jurnal tahun ini: hari ke-N (WIB), musim sekarang & berikutnya, musim per bulan (klik = lihat desa
- * bulan itu), kalender kebiasaan mencatat, dan ringkasan setahun. Semua dari snapshot + tanda nol
- * pengeluaran di browser; tidak ada query tambahan dan tidak ada nominal.
+ * bulan itu), kalender kebiasaan mencatat, dan ringkasan setahun. Semua dari snapshot (termasuk tanda
+ * nol pengeluaran di snapshot.sync); tidak ada query tambahan dan tidak ada nominal.
  */
 export default function JournalPanel() {
   const today = useWibToday();
@@ -47,6 +47,7 @@ export default function JournalPanel() {
   const activity = useVillage((s) => s.snapshot?.activityDays ?? NO_DAYS);
   const goals = useVillage((s) => s.snapshot?.goals ?? NO_GOALS);
   const noSpend = useVillage((s) => s.noSpendDays);
+  const synced = useVillage((s) => s.syncBase.available);
   const loading = useVillage((s) => s.loading);
   const setPeriod = useVillage((s) => s.setPeriod);
   const reduceFx = useVillage((s) => s.ui.reduceFx ?? false);
@@ -248,8 +249,10 @@ export default function JournalPanel() {
       </section>
 
       <p className="muted small">
-        Hari ke-N dan kalender memakai kalender WIB. Hari tercatat = ada pengeluaran atau setoran hari itu. Tanda nol
-        pengeluaran tersimpan di perangkat ini saja, jadi kalender di perangkat lain bisa sedikit berbeda.
+        Hari ke-N dan kalender memakai kalender WIB. Hari tercatat = ada pengeluaran atau setoran hari itu.{" "}
+        {synced
+          ? "Tanda nol pengeluaran tersimpan di akunmu, jadi kalendernya sama di semua perangkat."
+          : "Tanda nol pengeluaran untuk sementara disimpan di perangkat ini dan dikirim ke akunmu begitu server siap."}
       </p>
     </>
   );

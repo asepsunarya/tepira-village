@@ -1,54 +1,14 @@
 import type { Snapshot } from "@/lib/game";
 
 /**
- * Progres "tur desa" untuk pengguna baru. Disimpan per user di browser saja
- * (tidak ada tabel/kolom baru); kalau storage diblokir, cukup diingat selama sesi.
+ * Progres "tur desa" untuk pengguna baru. Status & langkah tersimpan di akun (VillageState "tour",
+ * lewat store & lib/village-sync.ts) supaya tur yang sudah selesai di HP tidak muncul lagi di laptop.
+ * Baseline & hitungan aksi di bawah ini hanya untuk sesi tab ini.
  */
-export type TourStatus = "active" | "done" | "skipped";
+export { TOUR_LAST_STEP, clampTourStep, type StoredTour, type TourStatus } from "@/lib/village-sync";
 
-export interface StoredTour {
-  status: TourStatus;
-  step: number;
-}
-
-/** Langkah 0 = sambutan, 1..TOUR_LAST_STEP = langkah bernomor (progres "n/8"). */
-export const TOUR_LAST_STEP = 8;
-
-export const clampTourStep = (step: number) =>
-  Math.max(0, Math.min(TOUR_LAST_STEP, Number.isFinite(step) ? Math.floor(step) : 0));
-
-/** Pemilik progres: email user (snapshot demo tidak pernah sampai ke sini). */
+/** Pemilik data desa di browser: email user (snapshot demo tidak pernah sampai ke sini). */
 export const tourOwner = (s: Snapshot) => s.user.email ?? "anon";
-
-export const tourKey = (owner: string) => `tepira-village-tour:v1:${owner}`;
-
-const memory = new Map<string, StoredTour>();
-
-export function readTour(owner: string): StoredTour | null {
-  const key = tourKey(owner);
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (raw) {
-      const v = JSON.parse(raw) as Partial<StoredTour> | null;
-      if (v && (v.status === "active" || v.status === "done" || v.status === "skipped") && typeof v.step === "number") {
-        return { status: v.status, step: clampTourStep(v.step) };
-      }
-    }
-  } catch {
-    // storage diblokir / JSON rusak: pakai ingatan sesi
-  }
-  return memory.get(key) ?? null;
-}
-
-export function writeTour(owner: string, value: StoredTour) {
-  const key = tourKey(owner);
-  memory.set(key, value);
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // tidak apa-apa, tur tetap jalan tanpa storage
-  }
-}
 
 export const periodKey = (s: Snapshot) => `${s.period.year}-${s.period.month}`;
 

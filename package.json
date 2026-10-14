@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
-    "@prisma/client": "^6.1.0",
+    "@prisma/client": "^6.19.3",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.1",
     "maplibre-gl": "^6.14.0",
@@ -25,6 +25,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.180.0",
+    "web-push": "^3.6.7",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -33,9 +34,10 @@
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.2",
     "@types/three": "^0.180.0",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9.18.0",
     "eslint-config-next": "^15.1.6",
-    "prisma": "^6.1.0",
+    "prisma": "^6.19.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

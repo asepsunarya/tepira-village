@@ -5,6 +5,7 @@ import { levelFor, levelTitle, nextUnlock, villageXp, xpForLevel } from "@/lib/g
 import { monthLabel } from "@/lib/format";
 import { SEASONS, seasonForMonth } from "@/lib/season";
 import { signOutAction } from "@/app/village/actions";
+import { disablePushForLogout } from "../push";
 import { LogoMark } from "@/components/brand/Logo";
 import { useVillage } from "../store";
 import { isFullscreenPanel, type Panel, type TimeOfDay } from "../types";
@@ -45,6 +46,7 @@ export default function HUD() {
   const lock = useVillage((s) => s.lock);
   const startTour = useVillage((s) => s.startTour);
   const streak = useStreak();
+  const bills = useVillage((s) => (s.snapshot?.recurring.available ? s.snapshot.recurring.bills.length : 0));
   const [menu, setMenu] = useState(false);
 
   if (!snapshot) return null;
@@ -76,7 +78,7 @@ export default function HUD() {
           </div>
           <button
             className="pill ghost tour-replay"
-            onClick={() => startTour(0)}
+            onClick={() => startTour(0, true)}
             title="Tur desa: ulangi panduan"
             aria-label="Ulangi tur desa"
             data-tour="tour-replay"
@@ -161,6 +163,16 @@ export default function HUD() {
           <span className="stat">
             🏡 <b>{doneGoals}</b>/{snapshot.goals.length} goal selesai
           </span>
+          {/* Jumlah saja (tanpa nama/nominal); di HP kotak pos 3D terlalu kecil, jadi ini pintunya. */}
+          {bills > 0 && (
+            <button
+              className={`stat mail ${panel === "letter" ? "on" : ""}`}
+              onClick={() => setPanel(panel === "letter" ? null : "letter")}
+              title="Tagihan rutin menunggu di kotak pos"
+            >
+              📮 <b>{bills}</b> tagihan
+            </button>
+          )}
           <span className={`stat ${loading ? "offline" : "live"}`}>
             <i className={`dot ${loading ? "off" : "pulse"}`} /> {loading ? "MENYIMPAN…" : "TERSAMBUNG"}
           </span>
@@ -216,7 +228,13 @@ export default function HUD() {
           <div className="user-menu">
             <small className="muted">{user.email}</small>
             {snapshot.devLogin && <small className="dev-badge">DEV LOGIN aktif</small>}
-            <form action={signOutAction}>
+            <form
+              action={async () => {
+                // Perangkat ini berhenti menerima pengingat akun ini (browser bersama), maks 2 dtk.
+                if (user.email) await disablePushForLogout(user.email);
+                await signOutAction();
+              }}
+            >
               <button className="pill" type="submit">↪ Keluar</button>
             </form>
           </div>

@@ -6,6 +6,8 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "tepira village",
     short_name: "tepira",
     description: "Nabung dari hal yang teu pira, lihat desamu tumbuh.",
+    // id = start_url (bawaan browser juga begitu): identitas app terpasang tetap walau start_url berubah.
+    id: "/village",
     start_url: "/village",
     display: "standalone",
     background_color: "#cfe9f7",

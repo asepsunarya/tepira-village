@@ -1,3 +1,6 @@
+import type { VillageSync } from "@/lib/village-sync";
+import type { RecurringData, RecurringLink } from "@/lib/recurring";
+
 /**
  * Tipe & aturan "game" yang dipakai bersama server (snapshot) dan client (desa 3D).
  * Semua angka uang dalam Rupiah bulat (sama seperti kolom Int di skema tepira).
@@ -8,6 +11,8 @@ export interface ContributionView {
   amount: number;
   note: string | null;
   date: string;
+  /** dibuat dari setoran rutin (🔁); kosong = setoran biasa */
+  recurring?: RecurringLink | null;
 }
 
 export interface GoalView {
@@ -46,6 +51,8 @@ export interface ExpenseView {
   placeName: string | null;
   latitude: number | null;
   longitude: number | null;
+  /** dibuat dari tagihan rutin (🔁); kosong = catatan biasa */
+  recurring?: RecurringLink | null;
 }
 
 /** Tempat yang pernah dicatat lengkap dengan titiknya, untuk dipakai ulang (chip & "@nama" di catat cepat). */
@@ -122,7 +129,8 @@ export interface Snapshot {
   previousSalary: (SalaryView & { month: number; year: number }) | null;
   /**
    * Hari WIB (lihat wibDay) yang punya pengeluaran atau setoran, ACTIVITY_WINDOW_DAYS terakhir,
-   * urut naik. Dasar lampu streak & warga; tidak ikut bulan yang sedang dilihat.
+   * urut naik. Dasar lampu streak & warga; tidak ikut bulan yang sedang dilihat. Yang dicatat
+   * otomatis oleh Pak Pos (tagihan rutin ⚡) tidak dihitung; yang dicatat lewat tombol Catat dihitung.
    */
   activityDays: number[];
   /** Insight mingguan tepira terbaru sampai bulan yang dilihat, null kalau belum ada. */
@@ -141,13 +149,25 @@ export interface Snapshot {
     debts: number;
     netWorth: number;
   };
+  /**
+   * Data desa per user yang ikut pindah antar perangkat (tanda nol pengeluaran, batas jajan, surat
+   * terbaca, perayaan, tur), dibaca dari NoSpendDay / PlaceSpendLimit / VillageState. available:false =
+   * tabelnya belum ada atau desa contoh: desa jalan dari perangkat ini saja (lihat lib/village-sync.ts).
+   */
+  sync: VillageSync;
+  /**
+   * Tagihan & setoran rutin (lib/recurring.ts): aturan, tagihan di kotak pos, catatan otomatis 7 hari.
+   * available:false = tabelnya belum ada atau desa contoh.
+   */
+  recurring: RecurringData;
   pinRequired: boolean;
   devLogin: boolean;
   generatedAt: string;
 }
 
 export type ActionResult =
-  | { ok: true; snapshot: Snapshot }
+  /** notice = pesan sukses dari server (tanpa nominal), ditampilkan store */
+  | { ok: true; snapshot: Snapshot; notice?: string }
   | { ok: false; message: string };
 
 // ── Level desa ───────────────────────────────────────────────────────────────

@@ -4,6 +4,9 @@
  * Tidak dipakai di production — database produksi sudah berisi data tepira.
  */
 import { PrismaClient } from "@prisma/client";
+import { wibDay, wibDayDate } from "../lib/game";
+import { alignStart } from "../lib/recurring";
+import { wibDateParts } from "../lib/season";
 
 const prisma = new PrismaClient();
 const email = process.env.DEV_LOGIN_EMAIL || "dev@tepira.local";
@@ -22,6 +25,7 @@ async function main() {
   const existing = await prisma.goal.count({ where: { userId: user.id } });
   if (existing > 0) {
     console.log("Data sudah ada untuk", email, "- seed dilewati.");
+    await seedRecurring(user.id);
     return;
   }
 
@@ -202,7 +206,59 @@ async function main() {
     }
   });
 
+  await seedRecurring(user.id);
   console.log("Seed selesai untuk", email);
+}
+
+/**
+ * Tagihan & setoran rutin contoh (Pak Pos): Spotify otomatis jatuh tempo hari ini, Kos lewat kotak pos
+ * yang sudah lewat 2 hari (langsung jadi tagihan), Cicilan HP 4/12, setoran mingguan Dana darurat.
+ * Sekali saja per user; dilewati kalau tabelnya belum ada (skema lama / belum db:push:dev).
+ */
+async function seedRecurring(userId: string) {
+  try {
+    if (await prisma.recurringTransaction.count({ where: { userId } })) {
+      console.log("Tagihan rutin sudah ada - dilewati.");
+      return;
+    }
+  } catch {
+    console.log("Tabel tagihan rutin belum ada - dilewati.");
+    return;
+  }
+  const wallets = await prisma.wallet.findMany({ where: { userId } });
+  const cc = wallets.find((w) => w.isDebt) ?? wallets[0];
+  const bank = wallets.find((w) => w.type === "bank") ?? wallets[0];
+  const goal = await prisma.goal.findFirst({ where: { userId, title: "Dana darurat" } });
+  if (!cc || !bank) return;
+  const today = wibDay(Date.now());
+  const date = (day: number) => wibDayDate(day);
+  const monthly = (day: number) => ({ frequency: "monthly", dayOfMonth: wibDateParts(day).date, startDate: date(day), nextDueDate: date(day) });
+  const hpDue = alignStart("monthly", 5, today);
+  await prisma.recurringTransaction.createMany({
+    data: [
+      { userId, kind: "expense", title: "Spotify", amount: 54_900, category: "Langganan (Spotify, Netflix, dll)", walletId: cc.id, mode: "auto", ...monthly(today) },
+      { userId, kind: "expense", title: "Kos", amount: 1_800_000, category: "Listrik / Air / Kos", walletId: bank.id, mode: "confirm", ...monthly(today - 2) },
+      {
+        userId,
+        kind: "expense",
+        title: "Cicilan HP",
+        amount: 450_000,
+        category: "Belanja kecil",
+        walletId: bank.id,
+        mode: "confirm",
+        frequency: "monthly",
+        dayOfMonth: 5,
+        startDate: date(hpDue),
+        nextDueDate: date(hpDue),
+        maxOccurrences: 12,
+        occurrenceCount: 4
+      },
+      ...(goal
+        ? [{ userId, kind: "saving", title: "Dana darurat", amount: 100_000, goalId: goal.id, mode: "auto", frequency: "weekly", startDate: date(today + 2), nextDueDate: date(today + 2) }]
+        : [])
+    ]
+  });
+  console.log("Tagihan rutin contoh dibuat (Spotify, Kos, Cicilan HP, Dana darurat).");
 }
 
 main()
