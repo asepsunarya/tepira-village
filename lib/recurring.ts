@@ -1,4 +1,4 @@
-import { wibDayDate } from "@/lib/game";
+import { wibDay, wibDayDate } from "@/lib/game";
 import { roundCoord } from "@/lib/places";
 import { daysInMonth, wibDateParts, wibDayOf } from "@/lib/season";
 
@@ -105,6 +105,38 @@ export function alignStart(frequency: Frequency, dayOfMonth: number | null, from
   const index = monthIndex(p.year, p.month);
   const d = anchoredDay(index, dayOfMonth);
   return d >= fromDay ? d : anchoredDay(index + (frequency === "yearly" ? 12 : 1), dayOfMonth);
+}
+
+/**
+ * Jatuh tempo berikutnya saat jadwal aturan diubah. Fase & hari pilihan user dipertahankan: jadwal baru
+ * dimulai dari tanggal pilihan (≥ hari ini), lalu tanggal yang sudah punya tagihan (≤ `lastDay`)
+ * dilewati MENYUSURI jadwal itu, bukan digeser ke "besok" / "bulan depan". Satu tanggal tidak pernah
+ * ditagih dua kali, dan "tiap 2 minggu mulai Rabu ini" tetap Rabu walau tagihan hari ini sudah diantar.
+ */
+export function rescheduledNextDue(
+  p: { frequency: Frequency; every: number; dayOfMonth: number | null; firstDueDay: number },
+  today: number,
+  lastDay: number | null
+) {
+  const startDay = alignStart(p.frequency, p.dayOfMonth, Math.max(p.firstDueDay, today));
+  const rule = { frequency: p.frequency, every: p.every, dayOfMonth: p.dayOfMonth, startDay };
+  return firstOnOrAfter(rule, lastDay === null ? today : Math.max(today, lastDay + 1));
+}
+
+/**
+ * Tanggal tagihan (dayOfMonth) dari form 🔁. `anchor` = patokan yang dibawa draft / aturan yang diubah
+ * (mis. 30 dari pengeluaran tgl 30 Jan). Selama tanggal terpilih = kemunculan patokan itu yang dijepit
+ * ke akhir bulan (28 Feb untuk patokan 30), patokannya dipertahankan; tanpa ini "tgl 30" diam-diam
+ * tersimpan "tgl 28". Tanggal lain (atau tanpa patokan) = tanggal yang dipilih. 31 lewat endOfMonth.
+ */
+export function formDayOfMonth(frequency: Frequency, endOfMonth: boolean, pickedDay: number, anchor: number | null) {
+  if (frequency === "weekly") return null;
+  if (frequency === "monthly" && endOfMonth) return 31;
+  const p = wibDateParts(pickedDay);
+  const fits =
+    anchor !== null && Number.isInteger(anchor) && anchor >= 1 && anchor < 31 &&
+    anchoredDay(monthIndex(p.year, p.month), anchor) === pickedDay;
+  return fits ? anchor : p.date;
 }
 
 /**
@@ -238,6 +270,23 @@ export function canAutoPost(
   );
 }
 
+/**
+ * Saringan murah sebelum membuka transaksi catat-otomatis (halaman, cron): aturan dijeda / bukan ⚡,
+ * tagihan terlalu tua, atau dompet/goal-nya sudah lepas (walletId/goalId null karena dihapus). Tagihan
+ * yang tidak lolos tidak mungkin dicatat otomatis, jadi tidak perlu BEGIN + 4 query + COMMIT tiap
+ * putaran. Yang lolos tetap diputuskan canAutoPost di dalam transaksi (dompet/goal dicek di database).
+ * Cicilan yang baru selesai (nonaktif, tagihan terakhirnya masih menunggu) tetap lolos.
+ */
+export function autoPostPrecheck(
+  r: Pick<RecurringView, "mode" | "kind" | "walletId" | "goalId"> & StatusFields,
+  dueDay: number,
+  today: number
+) {
+  const cheap: BlockReason | null =
+    r.kind === "expense" ? (r.walletId === null ? "no-wallet" : null) : r.goalId === null ? "no-goal" : null;
+  return canAutoPost(r, dueDay, today, cheap);
+}
+
 /** Cicilan ke berapa tagihan bertanggal `day` (null kalau aturan tanpa batas). */
 export function installmentOrdinal(r: RecurringView, day: number): number | null {
   if (r.maxOccurrences === null) return null;
@@ -292,6 +341,26 @@ export function newMail(data: RecurringData, marker: number | null, now: number)
   );
   const maxId = Math.max(marker ?? 0, ...data.bills.map((b) => b.id), ...data.autoPosted.map((a) => a.id));
   return { bills, autos, maxId };
+}
+
+/**
+ * Ada tagihan di kotak pos yang belum diumumkan Pak Pos (id di atas penanda `mail`)? Selama ada, amplop,
+ * label "🧾 n tagihan", dan Pak Pos yang sudah berdiri di kotak pos belum tampil: tagihan baru (juga yang
+ * datang bersama snapshot pertama) diantar lewat jalan kaki dari dermaga, bukan langsung muncul.
+ */
+export function hasUnannouncedBills(data: Pick<RecurringData, "available" | "bills">, marker: number | null) {
+  return data.available && data.bills.some((b) => marker === null || b.id > marker);
+}
+
+/**
+ * Snapshot di tab dibuat sebelum hari WIB ini (atau waktunya tidak jelas)? syncRecurring lalu selalu
+ * mengirim snapshot baru: tagihan & catatan otomatis hari ini bisa sudah dibuat cron atau perangkat lain,
+ * jadi "panggilan ini tidak membuat apa-apa" bukan berarti tab itu sudah melihatnya. Waktu dari masa
+ * depan dijepit ke sekarang (tidak bisa dipakai menahan pembaruan).
+ */
+export function snapshotFromEarlierDay(generatedAt: unknown, now: number) {
+  const t = typeof generatedAt === "string" ? Date.parse(generatedAt) : Number.NaN;
+  return !Number.isFinite(t) || wibDay(Math.min(t, now)) < wibDay(now);
 }
 
 // ── Label (tanpa nominal) ────────────────────────────────────────────────────
@@ -402,6 +471,11 @@ export interface RecurringInput {
   /** cicilan yang sudah dibayar sebelum dicatat di desa (hanya saat membuat) */
   paidBefore?: number | null;
   mode: RecurringMode;
+  /**
+   * Mengubah aturan tanpa menyentuh jadwal: frekuensi, tanggal & jatuh tempo yang tersimpan dipakai
+   * apa adanya (firstDue dari tab yang basi tidak dianggap perubahan jadwal).
+   */
+  keepSchedule?: boolean;
 }
 
 export interface ParsedRecurring {
@@ -425,9 +499,11 @@ export interface ParsedRecurring {
   maxOccurrences: number | null;
   paidBefore: number;
   mode: RecurringMode;
+  /** lihat RecurringInput.keepSchedule (hanya berarti saat mengubah) */
+  keepSchedule: boolean;
 }
 
-const clean = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ");
+const clean =(v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ");
 const intOrNull = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
 
 /** Validasi bentuk isian (tanpa database). Kepemilikan dompet/goal dicek server. */
@@ -469,6 +545,7 @@ export function parseRecurringInput(raw: unknown): ParsedRecurring {
   if (max !== null && paid >= max) throw new Error("Cicilan yang sudah dibayar harus lebih kecil dari jumlah cicilan.");
 
   const mode = r.mode === "auto" ? "auto" : "confirm";
+  const keepSchedule = r.keepSchedule === true;
 
   if (kind === "saving") {
     const goalId = Number(r.goalId);
@@ -476,7 +553,8 @@ export function parseRecurringInput(raw: unknown): ParsedRecurring {
     return {
       kind, title, amount, category: null, note, source: "gaji", walletId: null, goalId,
       placeName: null, latitude: null, longitude: null,
-      frequency, every, dayOfMonth, firstDueDay, maxOccurrences: max, paidBefore: max === null ? 0 : paid, mode
+      frequency, every, dayOfMonth, firstDueDay, maxOccurrences: max, paidBefore: max === null ? 0 : paid, mode,
+      keepSchedule
     };
   }
 
@@ -497,7 +575,8 @@ export function parseRecurringInput(raw: unknown): ParsedRecurring {
   return {
     kind, title, amount, category, note, source, walletId, goalId: null,
     placeName, latitude: valid ? roundCoord(lat) : null, longitude: valid ? roundCoord(lng) : null,
-    frequency, every, dayOfMonth, firstDueDay, maxOccurrences: max, paidBefore: max === null ? 0 : paid, mode
+    frequency, every, dayOfMonth, firstDueDay, maxOccurrences: max, paidBefore: max === null ? 0 : paid, mode,
+    keepSchedule
   };
 }
 
@@ -507,11 +586,15 @@ export function defaultTitle(p: Pick<ParsedRecurring, "title" | "note" | "catego
   return (p.title || p.note || fromCategory || goalTitle || "Tagihan rutin").slice(0, MAX_TITLE);
 }
 
-/** Jadwal berubah? (frekuensi, jarak, tanggal, atau jatuh tempo berikutnya) */
+/**
+ * Jadwal berubah? (frekuensi, jarak, tanggal, atau jatuh tempo berikutnya). keepSchedule = form tidak
+ * menyentuh jadwal: tidak pernah berubah, walau nextDueDay yang dikirim tab itu sudah basi.
+ */
 export function scheduleChanged(
   cur: Pick<RecurringView, "frequency" | "every" | "dayOfMonth" | "nextDueDay">,
-  next: Pick<ParsedRecurring, "frequency" | "every" | "dayOfMonth" | "firstDueDay">
+  next: Pick<ParsedRecurring, "frequency" | "every" | "dayOfMonth" | "firstDueDay"> & { keepSchedule?: boolean }
 ) {
+  if (next.keepSchedule) return false;
   return (
     cur.frequency !== next.frequency ||
     cur.every !== next.every ||

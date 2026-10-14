@@ -13,6 +13,7 @@ import {
   MAX_RULES_PER_USER,
   NO_RECURRING,
   alignStart,
+  autoPostPrecheck,
   canAutoPost,
   defaultTitle,
   dueBetween,
@@ -20,6 +21,7 @@ import {
   nextAfter,
   parseBillDecisions,
   parseRecurringInput,
+  rescheduledNextDue,
   ruleStatus,
   scheduleChanged,
   type BlockReason,
@@ -55,6 +57,16 @@ const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 /** Baris per query saat memproses banyak aturan/tagihan (cron). */
 const BATCH = 100;
 const AUTO_RECENT_MS = 7 * DAY_MS;
+
+/**
+ * Aturan yang dihapus user tapi sudah punya tagihan selesai (posted/skipped) disimpan dengan mode ini
+ * (dan active=false): hanya lewat baris tagihan itu desa tahu sebuah pengeluaran/setoran dicatat
+ * OTOMATIS (tidak menyalakan lampu streak, tidak dihitung pengingat lampu) dan dari tagihan rutin (🔁).
+ * RecurringOccurrence.recurring onDelete: Cascade, jadi menghapus aturannya ikut menghapus jejak itu.
+ * Aturan berarsip tidak pernah tampil, diproses, diubah, atau dihitung ke batas MAX_RULES_PER_USER.
+ */
+export const ARCHIVED_MODE = "archived";
+const LIVE = { mode: { not: ARCHIVED_MODE } };
 
 const asFrequency = (v: string): Frequency => (v === "weekly" || v === "yearly" ? v : "monthly");
 
@@ -110,7 +122,7 @@ export async function loadRecurring(userId: string, now = Date.now()): Promise<R
 async function readRecurring(userId: string, now: number): Promise<RecurringData> {
   const [rules, bills, autos] = await Promise.all([
     prisma.recurringTransaction.findMany({
-      where: { userId },
+      where: { userId, ...LIVE },
       include: { wallet: { select: { name: true } }, goal: { select: { title: true } } },
       orderBy: [{ nextDueDate: "asc" }, { id: "asc" }],
       take: MAX_RULES_PER_USER
@@ -122,7 +134,13 @@ async function readRecurring(userId: string, now: number): Promise<RecurringData
       take: 300
     }),
     prisma.recurringOccurrence.findMany({
-      where: { userId, status: "posted", postedVia: "auto", resolvedAt: { gte: new Date(now - AUTO_RECENT_MS) } },
+      where: {
+        userId,
+        status: "posted",
+        postedVia: "auto",
+        resolvedAt: { gte: new Date(now - AUTO_RECENT_MS) },
+        recurring: LIVE
+      },
       select: { id: true, recurringId: true, dueDate: true, amount: true, resolvedAt: true },
       orderBy: { id: "desc" },
       take: 20
@@ -249,6 +267,8 @@ export async function processDueRecurring(
     cursor = 0;
     const perUser = new Map<string, number>();
     const stuck = new Set<number>();
+    /** dompet/goal aturan masih ada (dicek sekali per aturan per putaran, tanpa transaksi) */
+    const refsOk = new Map<number, boolean>();
     for (let more = true; more && Date.now() < deadline; ) {
       const pending = await prisma.recurringOccurrence.findMany({
         where: {
@@ -258,7 +278,15 @@ export async function processDueRecurring(
           dueDate: { gte: wibDayDate(today - AUTO_MAX_AGE_DAYS), lte: wibDayDate(today) },
           recurring: { mode: "auto" }
         },
-        select: { id: true, userId: true, recurringId: true },
+        select: {
+          id: true,
+          userId: true,
+          recurringId: true,
+          dueDate: true,
+          recurring: {
+            select: { mode: true, kind: true, active: true, maxOccurrences: true, occurrenceCount: true, walletId: true, goalId: true }
+          }
+        },
         orderBy: { id: "asc" },
         take: BATCH
       });
@@ -268,6 +296,12 @@ export async function processDueRecurring(
         if (Date.now() >= deadline) break;
         if (stuck.has(o.recurringId) || (perUser.get(o.userId) ?? 0) >= MAX_AUTO_PER_RUN) continue;
         try {
+          // Yang pasti terhalang (dijeda, dompet/goal lepas atau sudah dihapus) tidak membuka transaksi
+          // tiap putaran. Keputusan akhirnya tetap di dalam transaksi resolveOccurrence.
+          if (!(await autoPostLikely(o, today, refsOk))) {
+            stuck.add(o.recurringId);
+            continue;
+          }
           if ((await resolveOccurrence(o.userId, o.id, { action: "pay", via: "auto" }, now)) === "posted") {
             posted++;
             perUser.set(o.userId, (perUser.get(o.userId) ?? 0) + 1);
@@ -288,6 +322,36 @@ export async function processDueRecurring(
     return { available: false, materialized, posted, users: [...users] };
   }
   return { available: true, materialized, posted, users: [...users] };
+}
+
+type AutoRuleRow = Pick<RuleRow, "mode" | "kind" | "active" | "maxOccurrences" | "occurrenceCount" | "walletId" | "goalId">;
+
+/**
+ * Saringan sebelum transaksi catat-otomatis: autoPostPrecheck (murni), lalu dompet/goal yang dirujuk
+ * masih ada & goal belum tercapai (sekali per aturan per putaran, di luar transaksi).
+ */
+async function autoPostLikely(
+  o: { userId: string; recurringId: number; dueDate: Date; recurring: AutoRuleRow },
+  today: number,
+  refsOk: Map<number, boolean>
+) {
+  const r = o.recurring;
+  const rule = {
+    mode: r.mode === "auto" ? ("auto" as const) : ("confirm" as const),
+    kind: r.kind === "saving" ? ("saving" as const) : ("expense" as const),
+    active: r.active,
+    maxOccurrences: r.maxOccurrences,
+    occurrenceCount: r.occurrenceCount,
+    walletId: r.walletId,
+    goalId: r.goalId
+  };
+  if (!autoPostPrecheck(rule, wibDay(o.dueDate), today)) return false;
+  let ok = refsOk.get(o.recurringId);
+  if (ok === undefined) {
+    ok = (await blockedInTx(prisma, o.userId, rule)) === null;
+    refsOk.set(o.recurringId, ok);
+  }
+  return ok;
 }
 
 /** Buat tagihan pending untuk jatuh tempo ≤ hari ini. Kembalian = jumlah tagihan baru. */
@@ -337,8 +401,12 @@ async function materializeRule(row: RuleRow, today: number): Promise<number> {
   }, TX_OPTIONS);
 }
 
-/** Dicek ulang di dalam transaksi sebelum mencatat otomatis. */
-async function blockedInTx(tx: Tx, userId: string, rule: RecurringView): Promise<BlockReason | null> {
+/** Dicek ulang di dalam transaksi sebelum mencatat otomatis (dan sekali di luar transaksi, autoPostLikely). */
+async function blockedInTx(
+  tx: Tx,
+  userId: string,
+  rule: Pick<RecurringView, "kind" | "walletId" | "goalId">
+): Promise<BlockReason | null> {
   if (rule.kind === "expense") {
     if (rule.walletId === null) return "no-wallet";
     const wallet = await tx.wallet.findFirst({ where: { id: rule.walletId, ...userOwnedWhere(userId) }, select: { id: true } });
@@ -464,7 +532,7 @@ export async function createRecurringRule(userId: string, raw: unknown, now = Da
   return writeGuard(() =>
     prisma.$transaction(async (tx) => {
       const { goalTitle } = await ownedRefs(tx, userId, p);
-      if ((await tx.recurringTransaction.count({ where: { userId } })) >= MAX_RULES_PER_USER) {
+      if ((await tx.recurringTransaction.count({ where: { userId, ...LIVE } })) >= MAX_RULES_PER_USER) {
         throw new Error(`Maksimal ${MAX_RULES_PER_USER} tagihan & setoran rutin. Hapus yang sudah tidak dipakai dulu, ya.`);
       }
       const row = await tx.recurringTransaction.create({
@@ -499,16 +567,17 @@ export async function createRecurringRule(userId: string, raw: unknown, now = Da
 
 /**
  * Ubah aturan. Nominal, nama, kategori, dompet/goal, sumber, tempat, mode: hanya untuk tagihan
- * berikutnya (yang sudah diantar memakai nominal salinannya). Jadwal berubah → startDate & nextDueDate
- * dihitung ulang dari max(pilihan, hari ini, tagihan terakhir + 1), jadi satu tanggal tidak pernah
- * ditagih dua kali.
+ * berikutnya (yang sudah diantar memakai nominal salinannya). Jadwal berubah → jadwal baru dimulai dari
+ * tanggal pilihan (≥ hari ini) dengan fase & harinya, dan tanggal yang sudah punya tagihan dilewati
+ * menyusuri jadwal itu (rescheduledNextDue): satu tanggal tidak pernah ditagih dua kali. Form yang tidak
+ * menyentuh jadwal mengirim keepSchedule, jadi tab yang basi tidak memindahkan jadwal.
  */
 export async function updateRecurringRule(userId: string, id: number, raw: unknown, now = Date.now()) {
   const p = parseRecurringInput(raw);
   const today = wibDay(now);
   return writeGuard(() =>
     prisma.$transaction(async (tx) => {
-      const row = await tx.recurringTransaction.findFirst({ where: { id, userId } });
+      const row = await tx.recurringTransaction.findFirst({ where: { id, userId, ...LIVE } });
       if (!row) throw new Error("Tagihan rutin tidak ditemukan.");
       if (row.kind !== p.kind) throw new Error("Jenis rutin tidak bisa diubah. Buat yang baru saja, ya.");
       const { goalTitle } = await ownedRefs(tx, userId, p);
@@ -533,8 +602,7 @@ export async function updateRecurringRule(userId: string, id: number, raw: unkno
       if (moved) {
         checkFirstDue(p.firstDueDay, today);
         const last = await tx.recurringOccurrence.aggregate({ where: { recurringId: id }, _max: { dueDate: true } });
-        const lastDay = last._max.dueDate ? wibDay(last._max.dueDate) : Number.NEGATIVE_INFINITY;
-        nextDueDay = alignStart(p.frequency, p.dayOfMonth, Math.max(p.firstDueDay, today, lastDay + 1));
+        nextDueDay = rescheduledNextDue(p, today, last._max.dueDate ? wibDay(last._max.dueDate) : null);
         Object.assign(data, {
           frequency: p.frequency,
           repeatEvery: p.every,
@@ -569,12 +637,12 @@ export async function setRecurringActive(userId: string, id: number, active: boo
   const today = wibDay(now);
   return writeGuard(async () => {
     if (!active) {
-      const { count } = await prisma.recurringTransaction.updateMany({ where: { id, userId }, data: { active: false } });
+      const { count } = await prisma.recurringTransaction.updateMany({ where: { id, userId, ...LIVE }, data: { active: false } });
       if (!count) throw new Error("Tagihan rutin tidak ditemukan.");
       return { nextDueDay: null as number | null };
     }
     return prisma.$transaction(async (tx) => {
-      const row = await tx.recurringTransaction.findFirst({ where: { id, userId } });
+      const row = await tx.recurringTransaction.findFirst({ where: { id, userId, ...LIVE } });
       if (!row) throw new Error("Tagihan rutin tidak ditemukan.");
       const cur = toRecurringView(row);
       if (ruleStatus(cur) === "ended") throw new Error("Cicilan ini sudah lunas. Tambah jumlah cicilannya lewat ✏️ kalau mau lanjut.");
@@ -590,12 +658,28 @@ export async function setRecurringActive(userId: string, id: number, active: boo
   });
 }
 
-/** Hapus aturan + tagihannya yang menunggu. Pengeluaran/setoran yang sudah tercatat tetap ada. */
+/**
+ * Hapus aturan + tagihannya yang menunggu. Pengeluaran/setoran yang sudah tercatat tetap ada, begitu juga
+ * baris tagihan yang sudah selesai: aturan yang masih punya baris itu diarsipkan (ARCHIVED_MODE), bukan
+ * dihapus, supaya catatan otomatisnya tetap tidak menyalakan lampu streak. Tanpa tagihan = dihapus.
+ */
 export async function deleteRecurringRule(userId: string, id: number) {
-  return writeGuard(async () => {
-    const { count } = await prisma.recurringTransaction.deleteMany({ where: { id, userId } });
-    return count;
-  });
+  return writeGuard(() =>
+    prisma.$transaction(async (tx) => {
+      // Kunci & matikan aturannya dulu: pembuatan tagihan yang sedang berjalan selesai dulu, yang
+      // berikutnya kalah compare-and-set (updatedAt berubah).
+      const { count } = await tx.recurringTransaction.updateMany({ where: { id, userId, ...LIVE }, data: { active: false } });
+      if (!count) return 0;
+      // Menunggu klaim Catat/otomatis yang sedang berjalan; tagihan yang jadi posted tidak ikut terhapus.
+      await tx.recurringOccurrence.deleteMany({ where: { recurringId: id, userId, status: "pending" } });
+      if (await tx.recurringOccurrence.count({ where: { recurringId: id } })) {
+        await tx.recurringTransaction.updateMany({ where: { id, userId }, data: { mode: ARCHIVED_MODE } });
+      } else {
+        await tx.recurringTransaction.deleteMany({ where: { id, userId } });
+      }
+      return 1;
+    }, TX_OPTIONS)
+  );
 }
 
 export interface SettleSummary {
@@ -643,6 +727,24 @@ export async function skipOlderBills(userId: string, recurringId: number, now = 
     });
     return count;
   });
+}
+
+/**
+ * Ada aturan / tagihan rutin user ini yang berubah setelah `since`? Mis. tagihan hari ini dibuat &
+ * dicatat otomatis oleh cron, atau dicatat/diubah di perangkat lain: snapshot tab yang lebih lama perlu
+ * diganti walau syncRecurring sendiri tidak membuat apa-apa. Tabel belum ada → false.
+ */
+export async function recurringChangedSince(userId: string, since: Date): Promise<boolean> {
+  const { value } = await readOrMissing(
+    RECURRING_TABLES,
+    async () => {
+      const where = { userId, updatedAt: { gt: since } };
+      if (await prisma.recurringOccurrence.findFirst({ where, select: { id: true } })) return true;
+      return (await prisma.recurringTransaction.findFirst({ where, select: { id: true } })) !== null;
+    },
+    false
+  );
+  return value;
 }
 
 // ── Untuk cron & pengingat ───────────────────────────────────────────────────

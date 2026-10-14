@@ -119,8 +119,11 @@ interface State {
   storedTour: StoredTour | null;
   /** id tagihan rutin tertinggi yang sudah diumumkan Pak Pos (tersimpan di akun). */
   mailSeen: number | null;
-  /** Pak Pos berjalan ke kotak pos tiap nonce bertambah (ada kiriman baru). */
-  postman: { nonce: number } | null;
+  /**
+   * Ada kiriman baru: nonce bertambah. walk = Pak Pos berjalan dari dermaga; false (kurangi gerakan, tur
+   * jalan, layar penuh) = langsung tiba tanpa animasi.
+   */
+  postman: { nonce: number; walk: boolean } | null;
   /** Amplop tagihan baru tampil di kotak pos setelah Pak Pos tiba (atau langsung tanpa animasi). */
   mailDelivered: boolean;
   /** Isian awal form tagihan rutin (panel "recurring"); null = daftar. */
@@ -182,8 +185,12 @@ interface State {
   settleBills: (decisions: BillDecision[]) => Promise<boolean>;
   /** Lewati semua tagihan lama satu aturan kecuali yang terbaru. */
   skipOldBills: (recurringId: number) => Promise<boolean>;
-  /** Proses jatuh tempo di belakang layar (hari WIB berganti); snapshot hanya diganti kalau ada yang berubah. */
-  syncRecurring: () => Promise<void>;
+  /**
+   * Proses jatuh tempo di belakang layar (hari WIB berganti); snapshot hanya diganti kalau ada yang berubah.
+   * expectDay = hari WIB menurut browser: server yang masih di hari sebelumnya (jam perangkat lebih cepat)
+   * dicoba lagi sebentar lagi.
+   */
+  syncRecurring: (expectDay?: number) => Promise<void>;
   /** syncRecurring kalau terakhir lebih dari 30 menit lalu (tab kembali dilihat). */
   syncRecurringIfStale: () => void;
   /** Dipanggil Pak Pos saat tiba di kotak pos. */
@@ -235,6 +242,9 @@ const RETRY_MS = [5_000, 10_000, 20_000, 40_000, 60_000];
 const PULL_EVERY_MS = 30_000;
 /** Tab kembali dilihat: proses tagihan rutin lagi kalau terakhir lebih lama dari ini. */
 const RECURRING_SYNC_EVERY_MS = 30 * 60_000;
+/** Server masih di hari WIB kemarin (jam perangkat lebih cepat): coba lagi sekian kali, sekian jeda. */
+const RECURRING_RETRY_MS = 5_000;
+const RECURRING_RETRY_MAX = 3;
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
@@ -403,6 +413,26 @@ export const useVillage = create<State>()(
       let recurringInflight = false;
       let lastRecurringSync = 0;
       let mailTimer: ReturnType<typeof setTimeout> | undefined;
+      /** syncRecurring yang diminta saat aksi lain berjalan: dijalankan begitu selesai (null = tidak ada). */
+      let recurringWanted: number | null = null;
+      let recurringRetry: { day: number; tries: number; timer: ReturnType<typeof setTimeout> } | null = null;
+      const runWantedRecurring = () => {
+        if (recurringWanted === null || get().loading || recurringInflight) return;
+        const day = recurringWanted;
+        recurringWanted = null;
+        void get().syncRecurring(day || undefined);
+      };
+      /** Server belum di hari `day`: coba lagi (maks RECURRING_RETRY_MAX), lalu serahkan ke tarikan saat tab dilihat. */
+      const retryRecurring = (day: number) => {
+        const tries = recurringRetry?.day === day ? recurringRetry.tries + 1 : 1;
+        if (recurringRetry) clearTimeout(recurringRetry.timer);
+        recurringRetry = null;
+        if (tries > RECURRING_RETRY_MAX) {
+          lastRecurringSync = 0;
+          return;
+        }
+        recurringRetry = { day, tries, timer: setTimeout(() => void get().syncRecurring(day), RECURRING_RETRY_MS) };
+      };
 
       const apply = (result: ActionResult) => {
         if (result.ok) {
@@ -419,7 +449,6 @@ export const useVillage = create<State>()(
           });
           afterSync();
           celebrateSoon();
-          lastRecurringSync = Date.now();
           if (result.notice) notify(result.notice);
           // Setelah pesan aksinya sempat terbaca.
           clearTimeout(mailTimer);
@@ -429,14 +458,19 @@ export const useVillage = create<State>()(
         fail(result.message);
         return false;
       };
-      const mutate = async (fn: () => Promise<ActionResult>) => {
+      /** processes = aksi server ini juga memproses jatuh tempo (fetchSnapshot, buat/ubah/lanjutkan rutin). */
+      const mutate = async (fn: () => Promise<ActionResult>, processes = false) => {
         seq += 1;
         set({ loading: true });
         try {
-          return apply(await fn());
+          const ok = apply(await fn());
+          if (ok && processes) lastRecurringSync = Date.now();
+          return ok;
         } catch (error) {
           fail(error instanceof Error ? error.message : "Terjadi kesalahan.");
           return false;
+        } finally {
+          runWantedRecurring();
         }
       };
       const pushToast = (toast: Omit<WorldToast, "id" | "createdAt">) => {
@@ -507,7 +541,7 @@ export const useVillage = create<State>()(
         // Pak Pos berjalan dari dermaga; tanpa animasi kalau sistem minta kurangi gerakan, tur jalan, atau layar penuh.
         const walk = !prefersReducedMotion() && !get().tour.active && !isFullscreenPanel(get().panel);
         const nonce = (get().postman?.nonce ?? 0) + 1;
-        set({ postman: { nonce }, mailDelivered: !walk });
+        set({ postman: { nonce, walk }, mailDelivered: !walk });
         // Jaga-jaga (mis. WebGL tidak jalan): amplop tetap muncul.
         if (walk) setTimeout(() => get().postman?.nonce === nonce && set({ mailDelivered: true }), 25_000);
       };
@@ -574,12 +608,13 @@ export const useVillage = create<State>()(
         deliverMail: () => set({ mailDelivered: true }),
         saveRecurring: async (input, id) => {
           const ok = await mutate(() =>
-            id ? actions.updateRecurring(id, input, period()) : actions.createRecurring(input, period())
+            id ? actions.updateRecurring(id, input, period()) : actions.createRecurring(input, period()),
+            true
           );
           if (ok) set({ recurringDraft: null });
           return ok;
         },
-        setRecurringActive: async (id, active) => mutate(() => actions.setRecurringStatus(id, active, period())),
+        setRecurringActive: async (id, active) => mutate(() => actions.setRecurringStatus(id, active, period()), active),
         deleteRecurring: async (id) => {
           const ok = await mutate(() => actions.deleteRecurring(id, period()));
           if (ok) set({ recurringDraft: null });
@@ -610,15 +645,26 @@ export const useVillage = create<State>()(
           return ok;
         },
         skipOldBills: async (recurringId) => mutate(() => actions.skipOldRecurringBills(recurringId, period())),
-        syncRecurring: async () => {
+        syncRecurring: async (expectDay) => {
           const s = get().snapshot;
-          if (!s || isDemoSnapshot(s) || get().loading || recurringInflight) return;
+          if (!s || isDemoSnapshot(s)) return;
+          if (get().loading || recurringInflight) {
+            // Tidak dibuang diam-diam: dijalankan begitu aksi / sinkron yang sedang berjalan selesai.
+            recurringWanted = Math.max(recurringWanted ?? 0, expectDay ?? 0);
+            return;
+          }
           const my = seq;
           const p = s.period;
           recurringInflight = true;
           lastRecurringSync = Date.now();
           try {
-            const res = await actions.syncRecurring(p);
+            // generatedAt: server mengirim snapshot baru kalau tab ini tertinggal (hari berganti, cron, perangkat lain).
+            const res = await actions.syncRecurring(p, s.generatedAt);
+            if (res.ok && expectDay !== undefined && res.day !== undefined && res.day < expectDay) retryRecurring(expectDay);
+            else if (res.ok && recurringRetry && recurringRetry.day === expectDay) {
+              clearTimeout(recurringRetry.timer);
+              recurringRetry = null;
+            }
             if (!res.ok || !("snapshot" in res)) return;
             const cur = get().snapshot;
             // Ada aksi lain, bulan berganti, atau akun berganti selama request: hasil ini sudah basi.
@@ -630,6 +676,7 @@ export const useVillage = create<State>()(
             // diam saja: dicoba lagi saat hari berganti / tab dilihat lagi, dan tiap aksi memproses juga
           } finally {
             recurringInflight = false;
+            runWantedRecurring();
           }
         },
         syncRecurringIfStale: () => {
@@ -696,7 +743,7 @@ export const useVillage = create<State>()(
         dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 
         setPeriod: async (month, year) => {
-          const ok = await mutate(() => actions.fetchSnapshot({ month, year }));
+          const ok = await mutate(() => actions.fetchSnapshot({ month, year }), true);
           if (ok && typeof window !== "undefined") {
             const url = new URL(window.location.href);
             url.searchParams.set("month", String(month));
@@ -719,7 +766,7 @@ export const useVillage = create<State>()(
         },
 
         refresh: async () => {
-          await mutate(() => actions.fetchSnapshot(period()));
+          await mutate(() => actions.fetchSnapshot(period()), true);
         },
 
         createGoal: async (input) => {
@@ -866,8 +913,9 @@ export const useVillage = create<State>()(
           const had = get().noSpendDays.includes(day);
           // Membatalkan selalu boleh; menandai hanya dalam batas mundur (server memakai aturan yang sama).
           if (!had && !noSpendAllowed(day, now)) return;
-          // Nilai mutlak, bukan "toggle": aman terkirim dua kali.
-          enqueue({ t: "nospend", day, on: !had });
+          // Nilai mutlak, bukan "toggle": aman terkirim dua kali. made = hari ini: batas mundurnya dihitung
+          // dari hari tanda dibuat, jadi tanda yang lama menunggu di outbox tetap sah saat terkirim.
+          enqueue({ t: "nospend", day, on: !had, made: now });
           if (had) return;
           const lamp = LAMP_POSTS[6 - (now - day)];
           if (lamp) pushToast({ x: lamp[0], z: lamp[1], y: 3.4, text: "💡", sub: "Nol pengeluaran", tone: "info" });

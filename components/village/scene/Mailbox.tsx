@@ -14,8 +14,7 @@ import { useMail } from "../useProgress";
  */
 export default function Mailbox() {
   const setPanel = useVillage((s) => s.setPanel);
-  const { unread, bills } = useMail();
-  const delivered = useVillage((s) => s.mailDelivered);
+  const { unread, bills, delivered } = useMail();
   const hasBills = bills > 0 && delivered;
   const flag = useRef<THREE.Group>(null);
   const letter = useRef<THREE.Mesh>(null);

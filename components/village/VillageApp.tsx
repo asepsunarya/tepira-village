@@ -20,8 +20,9 @@ const Scene = dynamic(() => import("./scene/Scene"), {
 
 /**
  * Hari WIB berganti selagi desa terbuka (lewat tengah malam): Pak Pos memproses jatuh tempo hari baru.
- * Tidak saat pertama dibuka, karena halaman sudah memprosesnya di server. Tab kembali dilihat setelah
- * lama: lihat syncRecurringIfStale di store.
+ * Tidak saat pertama dibuka, karena halaman sudah memprosesnya di server. Hari baru ikut dikirim: kalau
+ * server masih di hari kemarin (jam perangkat lebih cepat), store mencoba lagi sebentar lagi. Tab kembali
+ * dilihat setelah lama: lihat syncRecurringIfStale di store.
  */
 function useRecurringSync() {
   const today = useWibToday();
@@ -30,7 +31,7 @@ function useRecurringSync() {
   useEffect(() => {
     if (seen.current === today) return;
     seen.current = today;
-    void syncRecurring();
+    void syncRecurring(today);
   }, [today, syncRecurring]);
 }
 

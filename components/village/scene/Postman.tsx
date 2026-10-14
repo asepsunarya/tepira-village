@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
+import { postmanHittable, postmanOnNewMail, postmanStandsAtMailbox, type PostmanPhase } from "@/lib/postman";
 import { MAILBOX_FRONT, POSTMAN_START } from "../layout";
 import { useReducedMotion } from "../seasons";
 import { useVillage } from "../store";
@@ -12,13 +13,12 @@ import { useMail } from "../useProgress";
  * Pak Pos: datang dari pantai dekat dermaga setiap ada kiriman baru (tagihan rutin / catatan
  * otomatis), memasukkan amplop ke kotak pos, lalu menunggu di depan kotak pos selama masih ada tagihan
  * yang belum dicatat. Tagihan habis → pulang. "Kurangi gerakan": muncul/hilang tanpa berjalan.
- * Klik = buka 📮 Kotak pos. Seragam oranye polos (bukan logo layanan pos mana pun).
+ * Klik = buka 📮 Kotak pos. Seragam oranye polos (bukan logo layanan pos mana pun). Keputusan fasenya
+ * murni di lib/postman.ts.
  */
 
-type Phase = "hidden" | "in" | "deliver" | "wait" | "out";
-
 interface Runtime {
-  phase: Phase;
+  phase: PostmanPhase;
   x: number;
   z: number;
   yaw: number;
@@ -32,40 +32,40 @@ const DELIVER_S = 2.2;
 const SHIRT = "#f08a3c";
 const NAVY = "#2f3a5e";
 const SKIN = "#ffe3cf";
+const noRaycast = () => {};
 
 export default function Postman() {
   const nonce = useVillage((s) => s.postman?.nonce ?? 0);
-  const delivered = useVillage((s) => s.mailDelivered);
+  /** false = store memutuskan tanpa animasi (tur jalan, layar penuh): langsung tiba. */
+  const walkIn = useVillage((s) => s.postman?.walk ?? true);
   const deliverMail = useVillage((s) => s.deliverMail);
   const setPanel = useVillage((s) => s.setPanel);
-  const { bills } = useMail();
+  // delivered = amplop sudah diantar & tidak ada tagihan yang belum diumumkan (lihat useMail).
+  const { bills, delivered } = useMail();
   const reduced = useReducedMotion();
   const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
   const envelope = useRef<THREE.Mesh>(null);
   const rt = useRef<Runtime>({ phase: "hidden", x: POSTMAN_START.x, z: POSTMAN_START.z, yaw: 0, t: 0, timer: 0, nonce: 0 });
+  /** Raycast mesh sedang dimatikan (Pak Pos tersembunyi)? null = belum pernah diatur. */
+  const raycastOff = useRef<boolean | null>(null);
+  /** Kursor "pointer" dipasang oleh Pak Pos (hanya itu yang dilepas di onPointerOut). */
+  const hovering = useRef(false);
 
   // Kiriman baru: berjalan dari dermaga (atau dari tempatnya sekarang kalau sedang pulang).
   useEffect(() => {
     const r = rt.current;
     if (!nonce || nonce === r.nonce) return;
     r.nonce = nonce;
-    if (reduced) {
-      deliverMail();
-      return;
-    }
-    if (r.phase === "wait" || r.phase === "deliver") {
-      r.phase = "deliver";
-      r.timer = DELIVER_S;
-      deliverMail();
-      return;
-    }
-    if (r.phase === "hidden") {
+    const next = postmanOnNewMail(r.phase, !reduced && walkIn);
+    if (next.fromDock) {
       r.x = POSTMAN_START.x;
       r.z = POSTMAN_START.z;
     }
-    r.phase = "in";
-  }, [nonce, reduced, deliverMail]);
+    if (next.phase === "deliver") r.timer = DELIVER_S;
+    r.phase = next.phase;
+    if (next.deliverNow) deliverMail();
+  }, [nonce, reduced, walkIn, deliverMail]);
 
   useFrame((_, delta) => {
     const r = rt.current;
@@ -89,8 +89,9 @@ export default function Postman() {
 
     switch (r.phase) {
       case "hidden":
-        // Halaman dibuka dan tagihan lama masih menunggu: Pak Pos sudah berdiri di depan kotak pos.
-        if (bills > 0 && delivered) {
+        // Halaman dibuka dan tagihan lama (sudah diumumkan) masih menunggu: Pak Pos sudah berdiri di depan
+        // kotak pos. Tagihan baru menunggu pengumumannya supaya ia berjalan dari dermaga.
+        if (postmanStandsAtMailbox(bills, delivered)) {
           r.phase = "wait";
           r.x = MAILBOX_FRONT.x;
           r.z = MAILBOX_FRONT.z;
@@ -120,6 +121,19 @@ export default function Postman() {
     const g = group.current;
     if (!g) return;
     g.visible = r.phase !== "hidden";
+    // Tersembunyi = tidak bisa diklik: three.js tetap meraycast objek tak terlihat, dan ia diparkir tepat
+    // di papan "segera dibangun" / ujung dermaga. Diatur hanya saat statusnya berganti.
+    const off = !postmanHittable(r.phase);
+    if (raycastOff.current !== off) {
+      raycastOff.current = off;
+      g.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).raycast = off ? noRaycast : THREE.Mesh.prototype.raycast;
+      });
+      if (off && hovering.current) {
+        hovering.current = false;
+        document.body.style.cursor = "";
+      }
+    }
     const hop = r.phase === "deliver" ? Math.max(0, Math.sin((DELIVER_S - r.timer) * 6)) * 0.18 : 0;
     const bob = moving ? Math.abs(Math.sin(r.t * 10)) * 0.12 : 0;
     g.position.set(r.x, bob + hop, r.z);
@@ -137,11 +151,21 @@ export default function Postman() {
       visible={false}
       scale={0.85}
       onClick={(e) => {
+        // Tersembunyi: klik diteruskan ke papan / dermaga di belakangnya (tanpa stopPropagation).
+        if (!postmanHittable(rt.current.phase)) return;
         e.stopPropagation();
         setPanel("letter");
       }}
-      onPointerOver={() => (document.body.style.cursor = "pointer")}
-      onPointerOut={() => (document.body.style.cursor = "")}
+      onPointerOver={() => {
+        if (!postmanHittable(rt.current.phase)) return;
+        hovering.current = true;
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        if (!hovering.current) return;
+        hovering.current = false;
+        document.body.style.cursor = "";
+      }}
     >
       <group ref={body}>
         <mesh position-y={0.6} castShadow>

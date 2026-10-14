@@ -21,7 +21,9 @@ import { normalizePlaceName } from "@/lib/places";
  * - `PlaceSpendLimit` satu baris per tempat (placeKey = normalizePlaceName(nama))
  * - `VillageState`    kunci → JSON: "letter" (tulisan terakhir menang), "seen" (maksimum per angka),
  *                     "tour" (selesai/dilewati tidak ditimpa "active" kecuali tur diulang lewat ❓),
- *                     "mail" (kiriman Pak Pos terakhir yang sudah diumumkan, maksimum)
+ *                     "mail" (kiriman Pak Pos terakhir yang sudah diumumkan, maksimum), dan satu baris
+ *                     per yang sengaja dihapus user ("rm:n:<hari>" batal nol pengeluaran, "rm:p:<tempat>"
+ *                     hapus batas jajan): impor kunci v1 dari perangkat lain tidak memunculkannya lagi
  *
  * Browser mengirim perubahan sebagai op kecil yang idempoten (nilai mutlak, bukan "toggle"), jadi
  * op yang terkirim dua kali (respons hilang, dua tab) tidak merusak apa pun.
@@ -33,6 +35,11 @@ export type TourStatus = "active" | "done" | "skipped";
 export interface StoredTour {
   status: TourStatus;
   step: number;
+  /**
+   * Tur diulang dengan sengaja lewat ❓ (hanya untuk status "active"). Impor kunci v1 dari perangkat
+   * lain tidak menutup tur seperti ini; selesai/dilewati yang sungguhan tetap menutupnya.
+   */
+  restarted?: boolean;
 }
 
 /** Langkah 0 = sambutan, 1..TOUR_LAST_STEP = langkah bernomor (progres "n/8"). */
@@ -54,6 +61,17 @@ export interface Seen {
 export const VILLAGE_STATE_KEYS = ["letter", "seen", "tour", "mail"] as const;
 export type VillageStateKey = (typeof VILLAGE_STATE_KEYS)[number];
 
+/**
+ * Yang sengaja dihapus user di akun ini: hari yang tanda nol pengeluarannya dibatalkan, dan kunci tempat
+ * (normalizePlaceName) yang batas jajannya dihapus. Hanya dipakai impor kunci v1 (perangkat lain yang
+ * baru dibuka setelah rilis): yang sudah dihapus tidak dihidupkan lagi oleh data lama perangkat itu.
+ * Ditandai/dipasang lagi dengan sengaja = keluar dari daftar ini.
+ */
+export interface RemovedMarks {
+  days: number[];
+  places: string[];
+}
+
 export interface VillageSyncData {
   /** hari WIB (wibDay) bertanda nol pengeluaran: unik, urut naik, dalam jendela aktivitas */
   noSpend: number[];
@@ -69,6 +87,7 @@ export interface VillageSyncData {
    * null = belum pernah. Hanya naik, jadi kiriman yang diumumkan di HP tidak diumumkan lagi di laptop.
    */
   mail: number | null;
+  removed: RemovedMarks;
 }
 
 export interface VillageSync extends VillageSyncData {
@@ -87,7 +106,8 @@ export const EMPTY_SYNC_DATA: VillageSyncData = Object.freeze({
   letter: null,
   seen: null,
   tour: null,
-  mail: null
+  mail: null,
+  removed: Object.freeze({ days: [], places: [] }) as unknown as RemovedMarks
 }) as VillageSyncData;
 
 /** Tanpa server: desa contoh, atau belum pernah tersambung. */
@@ -111,8 +131,12 @@ const MAX_SEEN_LEVEL = 9_999;
 const MAX_MAIL_ID = 2_147_483_647;
 
 export type SyncOp =
-  /** tandai (on) / batalkan (off) nol pengeluaran; menandai hanya hari ini & NOSPEND_BACKFILL_DAYS sebelumnya */
-  | { id: string; t: "nospend"; day: number; on: boolean }
+  /**
+   * tandai (on) / batalkan (off) nol pengeluaran. Menandai hanya hari ini & NOSPEND_BACKFILL_DAYS
+   * sebelumnya, dihitung dari `made` = hari WIB op itu DIBUAT (bukan hari dikirim): tanda yang menunggu
+   * di outbox (offline, tabel belum ada) tetap sah saat akhirnya terkirim. Op lama tanpa made = day.
+   */
+  | { id: string; t: "nospend"; day: number; on: boolean; made?: number }
   /** pasang/ganti batas (rupiah bulat per bulan) atau hapus (null) */
   | { id: string; t: "limit"; name: string; limit: number | null }
   | { id: string; t: "letter"; key: string }
@@ -157,6 +181,71 @@ export const inSyncWindow = (day: number, today: number) => day > today - ACTIVI
 /** Menandai nol pengeluaran hanya untuk hari ini dan NOSPEND_BACKFILL_DAYS hari sebelumnya (membatalkan selalu boleh). */
 export const noSpendAllowed = (day: number, today: number) => day <= today && day >= today - NOSPEND_BACKFILL_DAYS;
 
+/**
+ * Op "tandai nol pengeluaran" sah? Batas mundur dicek terhadap hari op dibuat (made), sekali, bukan
+ * terhadap hari op diputar ulang (deriveView) atau dikirim (server): tanda yang menunggu di outbox
+ * tidak padam setelah 2 hari. Tetap dibatasi: made ada di jendela sinkron (paling lama
+ * ACTIVITY_WINDOW_DAYS lalu, sama dengan umur tanda yang disimpan; paling cepat besok untuk selisih jam
+ * perangkat) dan harinya made-2..made, jadi op tidak bisa menandai hari di luar jendela itu.
+ */
+export function noSpendOpAllowed(op: { day: number; made?: number }, today: number) {
+  const made = op.made ?? op.day;
+  return inSyncWindow(made, today) && inSyncWindow(op.day, today) && noSpendAllowed(op.day, made);
+}
+
+/**
+ * Surat yang lebih baru? Hanya kunci sejenis: "i<id insight>" (SERIAL) dan "w<hari Senin>" sama-sama
+ * naik; i vs w tidak bisa dibandingkan (false). Dipakai impor: surat terbaru dari perangkat mana pun
+ * menang, bukan surat perangkat yang kebetulan mengimpor duluan.
+ */
+export function newerLetterKey(a: string, b: string): boolean {
+  if (!parseLetterKey(a) || !parseLetterKey(b) || a[0] !== b[0]) return false;
+  return Number(a.slice(1)) > Number(b.slice(1));
+}
+
+// ── Tanda "sengaja dihapus" (satu baris VillageState per item) ───────────────
+export const REMOVED_KEY_PREFIX = "rm:";
+export const removedDayKey = (day: number) => `rm:n:${day}`;
+export const removedPlaceKey = (placeKey: string) => `rm:p:${placeKey}`;
+/** Batas tanda yang dibaca per jenis (hari juga dibatasi jendela aktivitas). */
+export const MAX_REMOVED_MARKS = 1_000;
+
+/** Kunci "rm:…" dari database → RemovedMarks (hari di luar jendela & kunci rusak dibuang). */
+export function parseRemovedKeys(keys: readonly string[], today: number): RemovedMarks {
+  const days: number[] = [];
+  const places: string[] = [];
+  for (const k of keys) {
+    if (k.startsWith("rm:n:") && /^-?\d{1,9}$/.test(k.slice(5))) days.push(Number(k.slice(5)));
+    else if (k.startsWith("rm:p:")) places.push(k.slice(5));
+  }
+  return parseRemoved({ days, places }, today);
+}
+
+function parseRemoved(v: unknown, today: number): RemovedMarks {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return EMPTY_SYNC_DATA.removed;
+  const r = v as { days?: unknown; places?: unknown };
+  const places = Array.isArray(r.places)
+    ? [...new Set(r.places.filter((k): k is string => typeof k === "string" && k !== "" && normalizePlaceName(k) === k))]
+        .sort()
+        .slice(0, MAX_REMOVED_MARKS)
+    : [];
+  return { days: cleanNoSpendDays(r.days, today).slice(-MAX_REMOVED_MARKS), places };
+}
+
+function withRemovedDay(s: VillageSyncData, day: number, removed: boolean): VillageSyncData {
+  const days = s.removed.days;
+  if (days.includes(day) === removed) return s;
+  const next = removed ? [...days, day].sort((a, b) => a - b) : days.filter((d) => d !== day);
+  return { ...s, removed: { ...s.removed, days: next } };
+}
+
+function withRemovedPlace(s: VillageSyncData, key: string, removed: boolean): VillageSyncData {
+  const places = s.removed.places;
+  if (places.includes(key) === removed) return s;
+  const next = removed ? [...places, key].sort() : places.filter((k) => k !== key);
+  return { ...s, removed: { ...s.removed, places: next } };
+}
+
 /** Spasi dirapikan seperti parsePlaceLimits; kunci = normalizePlaceName(hasil ini). */
 export const cleanPlaceName = (name: string) => name.trim().replace(/\s+/g, " ");
 
@@ -183,7 +272,9 @@ export function parseTour(v: unknown): StoredTour | null {
   if (!v || typeof v !== "object") return null;
   const t = v as Partial<StoredTour>;
   if (t.status !== "active" && t.status !== "done" && t.status !== "skipped") return null;
-  return typeof t.step === "number" ? { status: t.status, step: clampTourStep(t.step) } : null;
+  if (typeof t.step !== "number") return null;
+  const tour: StoredTour = { status: t.status, step: clampTourStep(t.step) };
+  return t.status === "active" && t.restarted === true ? { ...tour, restarted: true } : tour;
 }
 
 /** Hari unik, urut naik, dalam jendela. */
@@ -202,7 +293,8 @@ export function parseSyncData(raw: unknown, today: number): VillageSyncData {
     letter: parseLetterKey(r.letter),
     seen: parseSeen(r.seen),
     tour: parseTour(r.tour),
-    mail: parseMail(r.mail)
+    mail: parseMail(r.mail),
+    removed: parseRemoved(r.removed, today)
   };
 }
 
@@ -242,7 +334,9 @@ export function parseSyncOps(raw: unknown, max = MAX_OPS_PER_CALL): SyncOp[] {
     const id = o.id;
     switch (o.t) {
       case "nospend":
-        if (isInt(o.day) && typeof o.on === "boolean") out.push({ id, t: "nospend", day: o.day, on: o.on });
+        if (isInt(o.day) && typeof o.on === "boolean") {
+          out.push({ id, t: "nospend", day: o.day, on: o.on, ...(isInt(o.made) ? { made: o.made } : {}) });
+        }
         break;
       case "limit": {
         if (typeof o.name !== "string") break;
@@ -268,12 +362,14 @@ export function parseSyncOps(raw: unknown, max = MAX_OPS_PER_CALL): SyncOp[] {
         break;
       }
       case "tour": {
-        const tour = parseTour(o);
+        // Tanda "diulang" hanya lewat restart, bukan dari isian op.
+        const tour = parseTour({ status: o.status, step: o.step });
         if (tour) out.push({ id, t: "tour", ...tour, restart: o.restart === true });
         break;
       }
       case "import": {
         const noSpend = Array.isArray(o.noSpend) ? o.noSpend.slice(0, ACTIVITY_WINDOW_DAYS + 2).filter(isInt) : [];
+        const tour = parseTour(o.tour);
         out.push({
           id,
           t: "import",
@@ -281,7 +377,7 @@ export function parseSyncOps(raw: unknown, max = MAX_OPS_PER_CALL): SyncOp[] {
           limits: parseLimitList(o.limits),
           letter: parseLetterKey(o.letter),
           seen: parseSeen(o.seen),
-          tour: parseTour(o.tour)
+          tour: tour && { status: tour.status, step: tour.step }
         });
         break;
       }
@@ -293,7 +389,10 @@ export function parseSyncOps(raw: unknown, max = MAX_OPS_PER_CALL): SyncOp[] {
 }
 
 const tourUnconditional = (op: Extract<SyncOp, { t: "tour" }>) => op.restart || op.status !== "active";
-const sameTour = (a: StoredTour | null, b: StoredTour | null) => a?.status === b?.status && a?.step === b?.step;
+const sameTour = (a: StoredTour | null, b: StoredTour | null) =>
+  a?.status === b?.status && a?.step === b?.step && Boolean(a?.restarted) === Boolean(b?.restarted);
+/** Tur yang sedang jalan karena diulang lewat ❓: impor dari perangkat lain tidak menutupnya. */
+const restartedTour = (t: StoredTour | null) => t?.status === "active" && t.restarted === true;
 
 /**
  * Batas dari impor yang boleh ditambahkan: hanya tempat yang belum punya batas (yang sudah ada di
@@ -318,10 +417,12 @@ export function applySyncOp(s: VillageSyncData, op: SyncOp, today: number): Vill
     case "nospend": {
       const has = s.noSpend.includes(op.day);
       if (op.on) {
-        if (has || !noSpendAllowed(op.day, today)) return s;
-        return { ...s, noSpend: [...s.noSpend, op.day].sort((a, b) => a - b) };
+        if (!noSpendOpAllowed(op, today)) return s;
+        const marked = has ? s : { ...s, noSpend: [...s.noSpend, op.day].sort((a, b) => a - b) };
+        return withRemovedDay(marked, op.day, false);
       }
-      return has ? { ...s, noSpend: s.noSpend.filter((d) => d !== op.day) } : s;
+      const unmarked = has ? { ...s, noSpend: s.noSpend.filter((d) => d !== op.day) } : s;
+      return withRemovedDay(unmarked, op.day, true);
     }
     case "limit": {
       const name = cleanPlaceName(op.name);
@@ -333,7 +434,7 @@ export function applySyncOp(s: VillageSyncData, op: SyncOp, today: number): Vill
         if (!(key in s.placeLimits) && Object.keys(s.placeLimits).length >= MAX_PLACE_LIMITS) return s;
       }
       const next = withPlaceLimit(s.placeLimits, name, op.limit);
-      return next === s.placeLimits ? s : { ...s, placeLimits: next };
+      return withRemovedPlace(next === s.placeLimits ? s : { ...s, placeLimits: next }, key, op.limit === null);
     }
     case "letter":
       return s.letter === op.key || !parseLetterKey(op.key) ? s : { ...s, letter: op.key };
@@ -348,6 +449,8 @@ export function applySyncOp(s: VillageSyncData, op: SyncOp, today: number): Vill
     case "tour": {
       if (!tourUnconditional(op) && isTerminalTour(s.tour)) return s;
       const next: StoredTour = { status: op.status, step: clampTourStep(op.step) };
+      // ❓ menandai tur aktif sebagai diulang; langkah berikutnya (active biasa) mempertahankan tandanya.
+      if (op.status === "active" && (op.restart || restartedTour(s.tour))) next.restarted = true;
       return sameTour(s.tour, next) ? s : { ...s, tour: next };
     }
     case "import":
@@ -356,29 +459,43 @@ export function applySyncOp(s: VillageSyncData, op: SyncOp, today: number): Vill
 }
 
 /**
- * Impor data lama satu perangkat. Hari nol pengeluaran digabung (tanpa batas mundur, ini tanda
- * lama yang sah), batas: yang sudah ada menang, surat: hanya kalau belum ada, perayaan: maksimum,
- * tur: selesai/dilewati mengalahkan "active", "active" hanya kalau belum ada.
+ * Impor data lama satu perangkat (sekali per perangkat + akun, lihat prepareOutbox). Hanya MENAMBAH yang
+ * belum ada di akun, dan tidak pernah menghidupkan lagi yang sengaja dihapus di akun (removed):
+ * - hari nol pengeluaran digabung (tanpa batas mundur, ini tanda lama yang sah), kecuali yang dibatalkan;
+ * - batas: yang sudah ada menang, tempat yang batasnya dihapus dilewati;
+ * - surat: diisi kalau belum ada, atau diganti kalau surat impor lebih baru (newerLetterKey);
+ * - perayaan: maksimum;
+ * - tur: selesai/dilewati mengalahkan "active" (kecuali tur yang diulang lewat ❓), "active" hanya kalau belum ada.
  */
 function mergeImport(s: VillageSyncData, op: Extract<SyncOp, { t: "import" }>, today: number): VillageSyncData {
   let next = s;
-  const days = op.noSpend.filter((d) => d > today - ACTIVITY_WINDOW_DAYS && d <= today && !s.noSpend.includes(d));
+  const days = op.noSpend.filter(
+    (d) => d > today - ACTIVITY_WINDOW_DAYS && d <= today && !s.noSpend.includes(d) && !s.removed.days.includes(d)
+  );
   if (days.length) next = { ...next, noSpend: [...new Set([...s.noSpend, ...days])].sort((a, b) => a - b) };
 
-  const add = importableLimits(new Set(Object.keys(s.placeLimits)), op.limits);
+  const add = importableLimits(new Set(Object.keys(s.placeLimits)), notRemovedLimits(s.removed, op.limits));
   if (add.length) {
     let limits = next.placeLimits;
     for (const l of add) limits = withPlaceLimit(limits, l.name, l.limit);
     if (limits !== next.placeLimits) next = { ...next, placeLimits: limits };
   }
 
-  if (!next.letter && op.letter) next = { ...next, letter: op.letter };
+  if (op.letter && (!next.letter || newerLetterKey(op.letter, next.letter))) next = { ...next, letter: op.letter };
   if (op.seen) next = applySyncOp(next, { id: op.id, t: "seen", ...op.seen }, today);
   if (op.tour) {
-    const keep = isTerminalTour(op.tour) ? isTerminalTour(next.tour) : next.tour !== null;
-    if (!keep && !sameTour(next.tour, op.tour)) next = { ...next, tour: { ...op.tour } };
+    const keep = isTerminalTour(op.tour) ? isTerminalTour(next.tour) || restartedTour(next.tour) : next.tour !== null;
+    const tour: StoredTour = { status: op.tour.status, step: op.tour.step };
+    if (!keep && !sameTour(next.tour, tour)) next = { ...next, tour };
   }
   return next;
+}
+
+/** Batas dari impor, tanpa tempat yang batasnya sengaja dihapus di akun ini. */
+export function notRemovedLimits(removed: RemovedMarks, limits: readonly PlaceLimit[]): PlaceLimit[] {
+  if (!removed.places.length) return [...limits];
+  const gone = new Set(removed.places);
+  return limits.filter((l) => !gone.has(normalizePlaceName(l.name)));
 }
 
 export function applySyncOps(s: VillageSyncData, ops: readonly SyncOp[], today: number): VillageSyncData {
@@ -396,7 +513,8 @@ export const dataOf = (s: VillageSyncData): VillageSyncData => ({
   letter: s.letter,
   seen: s.seen,
   tour: s.tour,
-  mail: s.mail
+  mail: s.mail,
+  removed: s.removed ?? EMPTY_SYNC_DATA.removed
 });
 
 /** Dari dua salinan server, yang dibaca lebih belakangan (seri: yang datang). */
@@ -499,7 +617,17 @@ export interface LegacyRaw {
   tour: string | null;
 }
 
-/** null kalau semua kunci kosong; selain itu hash isi (berubah kalau tab lama menulis lagi). */
+/**
+ * Impor kunci v1 perlu? Hanya sekali per perangkat + akun: belum ada tanda impor (`flag`, isi kunci
+ * tepira-village-synced:v1:<email>) dan ada isi v1 (`fingerprint`). Tanda yang sudah ada, apa pun
+ * isinya, berarti sudah pernah: tab versi lama yang menulis kunci v1 lagi TIDAK memicu impor ulang,
+ * karena impor ulang menghidupkan lagi data yang sudah diimpor lalu sengaja dihapus.
+ */
+export function legacyImportNeeded(flag: string | null, fingerprint: string | null): boolean {
+  return flag === null && fingerprint !== null;
+}
+
+/** null kalau semua kunci kosong; selain itu hash isi (dicatat di tanda impor). */
 export function legacyFingerprint(raw: LegacyRaw): string | null {
   const parts = [raw.nospend, raw.seen, raw.letter, raw.limits, raw.tour];
   if (parts.every((p) => p === null)) return null;

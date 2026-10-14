@@ -13,10 +13,16 @@ import {
   importFromLegacy,
   importableLimits,
   legacyFingerprint,
+  legacyImportNeeded,
+  newerLetterKey,
   newerSync,
+  noSpendOpAllowed,
   parseSync,
   parseSyncData,
+  parseRemovedKeys,
   parseSyncOps,
+  removedDayKey,
+  removedPlaceKey,
   samePlaceLimits,
   type LegacyRaw,
   type SyncOp,
@@ -28,7 +34,9 @@ const TODAY = 20_740;
 let n = 0;
 const id = () => `op${(n++).toString(36)}`;
 const data = (patch: Partial<VillageSyncData> = {}): VillageSyncData => ({ ...EMPTY_SYNC_DATA, ...patch });
-const nospend = (day: number, on: boolean): SyncOp => ({ id: id(), t: "nospend", day, on });
+/** made = hari op dibuat (default: TODAY, seperti toggleNoSpend). */
+const nospend = (day: number, on: boolean, made: number | null = TODAY): SyncOp =>
+  made === null ? { id: id(), t: "nospend", day, on } : { id: id(), t: "nospend", day, on, made };
 const limit = (name: string, value: number | null): SyncOp => ({ id: id(), t: "limit", name, limit: value });
 const tour = (status: "active" | "done" | "skipped", step: number, restart = false): SyncOp => ({
   id: id(),
@@ -84,7 +92,10 @@ test("nospend: nilai mutlak & idempoten, batas mundur 2 hari, batal selalu boleh
   const on = applySyncOp(empty, nospend(TODAY, true), TODAY);
   assert.deepEqual(on.noSpend, [TODAY]);
   assert.equal(applySyncOp(on, nospend(TODAY, true), TODAY), on, "menandai dua kali = objek yang sama");
-  assert.equal(applySyncOp(empty, nospend(TODAY, false), TODAY), empty, "batal hari yang tidak ditandai = objek yang sama");
+  const off = applySyncOp(empty, nospend(TODAY, false), TODAY);
+  assert.deepEqual(off.noSpend, [], "batal hari yang tidak ditandai: tetap kosong");
+  assert.deepEqual(off.removed.days, [TODAY], "…tapi tercatat sengaja dibatalkan (untuk impor v1)");
+  assert.equal(applySyncOp(off, nospend(TODAY, false), TODAY), off, "batal dua kali = objek yang sama");
 
   assert.deepEqual(applySyncOp(empty, nospend(TODAY - 2, true), TODAY).noSpend, [TODAY - 2]);
   assert.equal(applySyncOp(empty, nospend(TODAY - 3, true), TODAY), empty, "lebih dari 2 hari ke belakang ditolak");
@@ -144,7 +155,11 @@ test("tour: selesai/dilewati tidak ditimpa 'active' kecuali diulang lewat ❓", 
   const done = applySyncOp(data(), tour("done", 8), TODAY);
   assert.deepEqual(done.tour, { status: "done", step: 8 });
   assert.equal(applySyncOp(done, tour("active", 3), TODAY), done, "langkah dari perangkat lain tidak membuka lagi");
-  assert.deepEqual(applySyncOp(done, tour("active", 0, true), TODAY).tour, { status: "active", step: 0 }, "restart menang");
+  assert.deepEqual(
+    applySyncOp(done, tour("active", 0, true), TODAY).tour,
+    { status: "active", step: 0, restarted: true },
+    "restart menang (dan ditandai diulang)"
+  );
   assert.deepEqual(applySyncOp(done, tour("skipped", 2), TODAY).tour, { status: "skipped", step: 2 });
 
   const active = applySyncOp(data(), tour("active", 2), TODAY);
@@ -426,4 +441,99 @@ test("mail (penanda kiriman Pak Pos): hanya naik, bentuk DB { occ } & salinan an
   );
   const [first, second] = [mail(9), mail(3)];
   assert.deepEqual(compactOutbox([first, second]), [{ ...second, occ: 9 }]);
+});
+
+test("nospend di outbox: batas mundur dihitung dari hari dibuat, tidak padam setelah 2 hari (#8, #12)", () => {
+  const D = TODAY;
+  const op = nospend(D, true, D); // ditandai hari D, menunggu di outbox (offline / tabel belum ada)
+  for (const later of [D, D + 1, D + 2, D + 3, D + 30, D + 399]) {
+    assert.deepEqual(deriveView(LOCAL_SYNC, [op], later).noSpend, [D], `masih menyala di D+${later - D}`);
+  }
+  // Server memakai aturan yang sama: lewat JSON + parseSyncOps, op tetap sah saat akhirnya terkirim.
+  const [sent] = parseSyncOps(JSON.parse(JSON.stringify([op])));
+  assert.equal((sent as Extract<SyncOp, { t: "nospend" }>).made, D);
+  assert.equal(noSpendOpAllowed(sent as Extract<SyncOp, { t: "nospend" }>, D + 3), true);
+  assert.deepEqual(applySyncOp(data(), sent, D + 30).noSpend, [D]);
+  // compactOutbox menyimpan made dari op terbaru.
+  const again = nospend(D - 1, true, D + 1);
+  assert.deepEqual(compactOutbox([nospend(D - 1, true, D), again]), [again]);
+
+  // Tetap dibatasi: mundur > 2 hari dari hari dibuat, hari dibuat di masa depan, di luar jendela 400 hari.
+  assert.equal(noSpendOpAllowed({ day: D - 3, made: D }, D), false);
+  assert.equal(noSpendOpAllowed({ day: D, made: D + 2 }, D), false, "dibuat lusa");
+  assert.equal(noSpendOpAllowed({ day: D + 1, made: D + 1 }, D), true, "selisih jam perangkat 1 hari");
+  assert.equal(noSpendOpAllowed({ day: D - 400, made: D - 400 }, D), false, "di luar jendela");
+  assert.equal(noSpendOpAllowed({ day: D - 399, made: D - 397 }, D), true);
+  assert.equal(noSpendOpAllowed({ day: D - 5 }, D), true, "op lama tanpa made = harinya sendiri");
+  const none = data();
+  assert.equal(applySyncOp(none, nospend(D - 3, true), D), none, "menandai 3 hari lalu dari hari ini tetap ditolak");
+});
+
+test("impor v1 tidak menghidupkan lagi yang sengaja dihapus di akun (#5, #17)", () => {
+  // HP sudah mengimpor Kopi & tanda D-3, lalu batas Kopi dihapus dan tanda D-3 dibatalkan.
+  const afterPhone = applySyncOps(
+    data(),
+    [importOp({ noSpend: [TODAY - 3, TODAY - 1], limits: [{ name: "Kopi", limit: 50_000 }] })],
+    TODAY
+  );
+  const edited = applySyncOps(afterPhone, [limit("Kopi", null), nospend(TODAY - 3, false)], TODAY);
+  assert.deepEqual(edited.noSpend, [TODAY - 1]);
+  assert.deepEqual(edited.placeLimits, {});
+  assert.deepEqual(edited.removed, { days: [TODAY - 3], places: ["kopi"] });
+  // Laptop yang baru dibuka (atau tab lama di HP) mengirim impor dengan data lama yang sama.
+  const laptop = importOp({
+    noSpend: [TODAY - 3, TODAY - 2],
+    limits: [
+      { name: "kopi", limit: 50_000 },
+      { name: "Bakso", limit: 20_000 }
+    ]
+  });
+  const merged = applySyncOp(edited, laptop, TODAY);
+  assert.deepEqual(merged.noSpend, [TODAY - 2, TODAY - 1], "hanya tanda yang belum pernah ada yang masuk");
+  assert.deepEqual(Object.keys(merged.placeLimits), ["bakso"], "Kopi yang dihapus tidak kembali");
+  // Ditandai / dipasang lagi dengan sengaja = keluar dari daftar hapus.
+  const back = applySyncOps(merged, [nospend(TODAY - 3, true, TODAY - 1), limit("KOPI", 60_000)], TODAY);
+  assert.deepEqual(back.noSpend, [TODAY - 3, TODAY - 2, TODAY - 1]);
+  assert.deepEqual(back.removed, { days: [], places: [] });
+  // Salinan di localStorage & baris database membawa daftar yang sama.
+  assert.deepEqual(parseSyncData(JSON.parse(JSON.stringify(edited)), TODAY).removed, edited.removed);
+  assert.deepEqual(
+    parseRemovedKeys([removedDayKey(TODAY - 3), removedPlaceKey("kopi"), "rm:n:x", "rm:n:" + (TODAY - 500), "letter"], TODAY),
+    { days: [TODAY - 3], places: ["kopi"] }
+  );
+  // Impor hanya sekali per perangkat + akun: tanda impor apa pun isinya = tidak diulang.
+  assert.equal(legacyImportNeeded(null, "fp1"), true);
+  assert.equal(legacyImportNeeded("fp1", "fp2"), false, "tab lama menulis kunci v1 lagi: tidak impor ulang");
+  assert.equal(legacyImportNeeded("fp1", "fp1"), false);
+  assert.equal(legacyImportNeeded(null, null), false);
+});
+
+test("impor v1 tidak menutup tur yang diulang lewat ❓ (#5)", () => {
+  const restarted = applySyncOp(data({ tour: { status: "done", step: 8 } }), tour("active", 0, true), TODAY);
+  assert.deepEqual(restarted.tour, { status: "active", step: 0, restarted: true });
+  const stepped = applySyncOp(restarted, tour("active", 3), TODAY);
+  assert.deepEqual(stepped.tour, { status: "active", step: 3, restarted: true }, "langkah berikutnya tetap bertanda");
+  const imported = applySyncOp(stepped, importOp({ tour: { status: "done", step: 8 } }), TODAY);
+  assert.equal(imported, stepped, "impor 'done' dari perangkat lain tidak menutupnya");
+  // Tur aktif biasa (mulai otomatis / impor perangkat lain) tetap ditutup impor yang selesai.
+  const plain = data({ tour: { status: "active", step: 2 } });
+  assert.deepEqual(applySyncOp(plain, importOp({ tour: { status: "skipped", step: 1 } }), TODAY).tour, { status: "skipped", step: 1 });
+  // Selesai sungguhan menutup & menghapus tandanya.
+  assert.deepEqual(applySyncOp(stepped, tour("done", 8), TODAY).tour, { status: "done", step: 8 });
+  // Tanda tidak bisa diselundupkan lewat isian op (hanya lewat restart).
+  const [op] = parseSyncOps([{ id: "t1", t: "tour", status: "active", step: 1, restart: false, restarted: true }]);
+  assert.deepEqual(applySyncOp(data(), op, TODAY).tour, { status: "active", step: 1 });
+});
+
+test("impor surat: yang lebih baru menang, bukan yang mengimpor duluan (#6)", () => {
+  assert.equal(newerLetterKey("i7", "i5"), true);
+  assert.equal(newerLetterKey("i5", "i7"), false);
+  assert.equal(newerLetterKey("i10", "i9"), true, "angka, bukan urutan huruf");
+  assert.equal(newerLetterKey("i7", "w20000"), false, "beda jenis tidak dibandingkan");
+  assert.equal(newerLetterKey("w20740", "w20733"), true);
+  // Laptop mengimpor i5 duluan; HP (sudah membaca i7) mengimpor belakangan.
+  assert.equal(applySyncOp(data({ letter: "i5" }), importOp({ letter: "i7" }), TODAY).letter, "i7");
+  assert.equal(applySyncOp(data({ letter: "i7" }), importOp({ letter: "i5" }), TODAY).letter, "i7");
+  assert.equal(applySyncOp(data({ letter: "w20740" }), importOp({ letter: "i7" }), TODAY).letter, "w20740");
+  assert.equal(applySyncOp(data(), importOp({ letter: "i5" }), TODAY).letter, "i5");
 });

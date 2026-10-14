@@ -4,7 +4,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { expenseCategories } from "@/lib/categories";
 import { walletEmoji } from "@/lib/game";
 import { categoryIcon } from "@/lib/places";
-import { wibDateParts, wibDayOf } from "@/lib/season";
+import { wibDayOf } from "@/lib/season";
 import {
   FREQUENCY_PRESETS,
   MAX_BILLS_PER_RULE,
@@ -17,6 +17,7 @@ import {
   dayLabel,
   dayShort,
   dueLabel,
+  formDayOfMonth,
   frequencyLabel,
   inputDay,
   installmentLabel,
@@ -218,6 +219,11 @@ function RecurringForm({ draft, editing }: { draft: RecurringDraft; editing?: Re
   const firstDay = Math.max(today, editing ? editing.nextDueDay : (inputDay(draft.firstDue) ?? today));
   const [date, setDate] = useState(dayInput(firstDay));
   const [endOfMonth, setEndOfMonth] = useState((editing?.dayOfMonth ?? draft.dayOfMonth ?? 0) >= 31);
+  /**
+   * Patokan tanggal dari draft / aturan yang diubah (mis. 30): dipertahankan selama tanggalnya belum
+   * dipilih sendiri, walau jatuh tempo pertamanya dijepit ke 28 Feb (lihat formDayOfMonth).
+   */
+  const [anchor, setAnchor] = useState<number | null>(editing?.dayOfMonth ?? draft.dayOfMonth ?? null);
   const [mode, setMode] = useState<"auto" | "confirm">(editing?.mode ?? draft.mode ?? "confirm");
   const [maxText, setMaxText] = useState(String(editing?.maxOccurrences ?? draft.maxOccurrences ?? ""));
   const [paidText, setPaidText] = useState("");
@@ -243,7 +249,7 @@ function RecurringForm({ draft, editing }: { draft: RecurringDraft; editing?: Re
   const frequency: Frequency = chosen.frequency;
   const every = chosen.every;
   const pickedDay = inputDay(date) ?? today;
-  const dayOfMonth = frequency === "weekly" ? null : frequency === "monthly" && endOfMonth ? 31 : wibDateParts(pickedDay).date;
+  const dayOfMonth = formDayOfMonth(frequency, endOfMonth, pickedDay, anchor);
   const startDay = alignStart(frequency, dayOfMonth, pickedDay);
   const preview = [startDay];
   while (preview.length < 3) preview.push(nextAfter({ frequency, every, dayOfMonth, startDay }, preview[preview.length - 1]));
@@ -287,11 +293,13 @@ function RecurringForm({ draft, editing }: { draft: RecurringDraft; editing?: Re
         : { goalId })
     };
     if (editing && !scheduleTouched) {
+      // Jadwal tidak disentuh: server memakai jadwal yang tersimpan, bukan nextDueDay tab ini (bisa basi).
       Object.assign(input, {
         frequency: editing.frequency,
         every: editing.every,
         dayOfMonth: editing.dayOfMonth,
-        firstDue: dayInput(editing.nextDueDay)
+        firstDue: dayInput(editing.nextDueDay),
+        keepSchedule: true
       });
     }
     await saveRecurring(input, editing?.id);
@@ -383,6 +391,7 @@ function RecurringForm({ draft, editing }: { draft: RecurringDraft; editing?: Re
               min={dayInput(today)}
               onChange={(e) => {
                 touch();
+                setAnchor(null);
                 setDate(e.target.value);
               }}
               required

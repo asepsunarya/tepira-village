@@ -214,6 +214,8 @@ Kanvas **🌊 Aliran uang** layar penuh menggambar uang bulan yang dilihat sebag
 Semua hari memakai **kalender WIB** (`wibDay` di `lib/game.ts`), sama dengan minggu insight di tepira. Server mengirim
 daftar hari yang punya catatan (`activityDays`, 400 hari terakhir) dan tanda nol pengeluaran (`snapshot.sync.noSpend`,
 jendela yang sama). Menandai nol pengeluaran hanya untuk hari ini dan 2 hari sebelumnya; membatalkan boleh kapan saja.
+Batas 2 hari itu dihitung dari hari tanda **dibuat** (op membawa `made`), bukan hari terkirim: tanda yang menunggu di outbox
+(offline, tabel belum ada) tetap menyala dan tetap tersimpan saat akhirnya terkirim (dalam jendela 400 hari).
 
 ## Sinkron antar perangkat
 
@@ -223,12 +225,13 @@ ber-`userId` NOT NULL (query dengan `{ userId }` biasa, bukan `userOwnedWhere`):
 
 | Data                         | Tabel                                   | Aturan kalau dua perangkat mengubah                                      |
 | ---------------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
-| Tanda nol pengeluaran        | `NoSpendDay` (satu baris per hari WIB, `DATE`) | Tandai = `createMany skipDuplicates` (hari ini..2 hari lalu), batal = `deleteMany`. Hari berbeda tidak saling menimpa |
+| Tanda nol pengeluaran        | `NoSpendDay` (satu baris per hari WIB, `DATE`) | Tandai = `createMany skipDuplicates` (hari dibuat..2 hari sebelumnya), batal = `deleteMany`. Hari berbeda tidak saling menimpa |
 | Batas jajan per tempat       | `PlaceSpendLimit` (satu baris per tempat) | Per tempat, yang terakhir sampai menang; hapus = hapus sungguhan; maks 50 |
-| Surat terakhir dibuka        | `VillageState` kunci `letter`           | Yang terakhir menang                                                     |
+| Surat terakhir dibuka        | `VillageState` kunci `letter`           | Yang terakhir menang (impor v1: surat yang lebih baru menang)            |
 | Warga & level yang dirayakan | `VillageState` kunci `seen`             | Maksimum per angka (`GREATEST` di SQL), tidak pernah turun               |
-| Progres tur                  | `VillageState` kunci `tour`             | Selesai/dilewati tidak ditimpa "lanjut langkah" dari perangkat lain; ❓ mengulang tur dengan sengaja |
+| Progres tur                  | `VillageState` kunci `tour`             | Selesai/dilewati tidak ditimpa "lanjut langkah" dari perangkat lain; ❓ mengulang tur dengan sengaja (ditandai `restarted`, impor v1 tidak menutupnya) |
 | Kiriman Pak Pos yang sudah diumumkan | `VillageState` kunci `mail` (`{ occ }` = id tagihan tertinggi) | Maksimum (`GREATEST`): tagihan yang diumumkan di HP tidak diumumkan lagi di laptop |
+| Yang sengaja dihapus          | `VillageState` kunci `rm:n:<hari>` (batal nol pengeluaran), `rm:p:<tempat>` (hapus batas) | Satu baris per item; ditandai / dipasang lagi = barisnya dihapus. Hanya dipakai impor v1 |
 
 Yang **tetap per perangkat**: preferensi tampilan `tepira-village-ui` (jam/cuaca, label, sembunyikan angka, kunci kamera,
 suasana peta, efek musim) karena tergantung layar & tempat, PIN yang sudah dibuka (`sessionStorage`, per tab), dan apakah
@@ -246,11 +249,15 @@ Cara kerjanya (`lib/village-sync.ts` murni + tes, `lib/village-state.ts` di serv
   atau gagal: muncul sekali "Belum tersambung…", dicoba lagi 5 dtk → 60 dtk, saat kembali online, dan saat halaman dibuka lagi.
 - **Perubahan dari perangkat lain** datang lewat snapshot aksi apa pun (termasuk ganti bulan) dan tarikan saat tab kembali
   dilihat / online (paling sering 30 dtk sekali). Tab lain di browser yang sama ikut lewat event `storage`.
-- **Impor sekali per perangkat.** Pertama kali dibuka setelah rilis ini, isi kunci lama (`tepira-village-nospend|seen|letter|
-  placelimits|tour:v1:<email>`) dikirim sebagai satu op impor: hari nol digabung (tanpa batas 2 hari, dalam 400 hari),
-  batas yang sudah ada di akun menang, surat hanya kalau akun belum punya, perayaan maksimum, tur selesai mengalahkan yang
-  aktif. Penandanya `tepira-village-synced:v1:<email>` (sidik jari isi kunci lama). Kunci lama tidak dihapus dulu, supaya
-  versi desa sebelumnya masih bisa dipakai kalau rilis dibatalkan.
+- **Impor sekali per perangkat + akun.** Pertama kali dibuka setelah rilis ini, isi kunci lama (`tepira-village-nospend|seen|letter|
+  placelimits|tour:v1:<email>`) dikirim sebagai satu op impor. Impor hanya **menambah** yang belum ada di akun dan tidak pernah
+  menghidupkan lagi yang sengaja dihapus (dari perangkat mana pun, lihat baris `rm:` di tabel): hari nol digabung (tanpa batas
+  2 hari, dalam 400 hari) kecuali yang sudah dibatalkan, batas yang sudah ada menang dan batas yang sudah dihapus tidak kembali,
+  surat yang lebih baru menang (`i<id insight>` / `w<minggu>` sejenis, angka lebih besar; HP yang sudah membaca surat terbaru
+  tidak melihatnya "baru" lagi karena laptop mengimpor surat lama duluan), perayaan maksimum, tur selesai mengalahkan yang aktif
+  kecuali tur yang diulang lewat ❓. Penandanya `tepira-village-synced:v1:<email>`: sekali ada, kunci lama perangkat itu tidak
+  diimpor lagi walau tab versi lama menulisnya (perubahan di tab lama setelah rilis tidak ikut sinkron). Kunci lama tidak
+  dihapus dulu, supaya versi desa sebelumnya masih bisa dipakai kalau rilis dibatalkan.
 - **Desa contoh di landing** tidak pernah mengirim apa pun (`snapshot.sync.available = false`, dicek juga di store).
 
 **Jaring urutan rilis.** Kalau desa ter-deploy sebelum migrasi tepira jalan, tabel di atas belum ada: membaca tabel baru
@@ -293,14 +300,20 @@ Aturannya (`lib/recurring.ts`, murni + tes):
   (≤35 hari); mematikannya langsung berhenti.
 - **Cicilan:** "berapa kali" + "sudah dibayar sebelumnya" → "cicilan 4/12"; tagihan terakhir dibuat → selesai. Lewati tetap
   menghabiskan satu periode.
-- **Ubah jadwal** menghitung ulang dari max(pilihan, hari ini, tagihan terakhir + 1): satu tanggal tidak pernah ditagih dua kali.
-- **Hapus aturan** = tagihan yang menunggu ikut hilang; pengeluaran/setoran yang sudah tercatat tetap ada.
+- **Ubah jadwal**: jadwal baru dimulai dari tanggal pilihan (≥ hari ini) dengan hari & fasenya; tanggal yang sudah punya tagihan
+  dilewati menyusuri jadwal itu (`rescheduledNextDue`), jadi satu tanggal tidak pernah ditagih dua kali dan "tiap 2 minggu mulai
+  Rabu ini" tetap Rabu walau tagihan hari ini sudah diantar. Mengubah tanpa menyentuh jadwal (mis. nominal saja) mengirim
+  `keepSchedule`: jadwal yang tersimpan dipakai apa adanya, walau tabnya basi. Patokan tgl 29/30 (dari "Jadikan rutin" atau aturan
+  yang diubah) tetap patokannya walau jatuh tempo pertamanya dijepit ke 28 Feb.
+- **Hapus aturan** = tagihan yang menunggu ikut hilang; pengeluaran/setoran yang sudah tercatat tetap ada. Aturan yang sudah punya
+  tagihan selesai **diarsipkan** (`mode = "archived"`, nonaktif, tidak tampil, tidak diproses, tidak dihitung ke batas 100), karena
+  hanya baris tagihannya yang menandai catatan otomatis (tidak menyalakan lampu, 🔁 di Riwayat); aturan tanpa tagihan selesai dihapus.
 - **Pengeluaran** dipotong dari dompet dengan aturan tepira (`createExpenseInTx`: aset berkurang, utang bertambah, `increment`
   atomik). **Setoran** hanya membuat Contribution (tidak menyentuh dompet), sama seperti Nabung.
 
 Kapan diproses: render `/village` (sebelum `buildSnapshot`, jadi saldo di render pertama sudah terpotong), `fetchSnapshot` (refresh
 & ganti bulan), aksi 🔁, aksi ringan `syncRecurring` saat hari WIB berganti selagi desa terbuka atau tab kembali dilihat setelah
->30 menit (snapshot hanya dibangun kalau ada yang berubah), dan dua cron harian untuk semua user (`/api/cron/postman` 07.00–08.00 WIB
+>30 menit, dan dua cron harian untuk semua user (`/api/cron/postman` 07.00–08.00 WIB
 dan susulan `/api/cron/reminders` 20.00–21.00 WIB, lihat [Pengingat](#pengingat-web-push)). Semua aman dijalankan bersamaan
 (dua tab, HP + laptop, cron): membuat tagihan = compare-and-set `nextDueDate` (+ `updatedAt`) lalu `createMany skipDuplicates`
 (unik `recurringId + dueDate`); menyelesaikan = klaim `pending → posted/skipped` (dengan `userId`), pengeluaran/setoran, dan
@@ -308,9 +321,18 @@ tautannya dalam satu transaksi pendek per tagihan (hanya `tx`, tanpa `Promise.al
 mendapat "sudah dicatat di perangkat lain", bukan error. Hasil `syncRecurring` di belakang layar dibuang kalau sementara itu ada
 aksi lain atau bulan sudah berganti.
 
+`syncRecurring(period, since)` mengirim snapshot baru kalau panggilan itu membuat/mencatat sesuatu, kalau snapshot tab (`since` =
+`generatedAt`) dari hari WIB sebelumnya, atau kalau aturan/tagihan berubah sejak snapshot itu (`recurringChangedSince`: cron pagi,
+perangkat lain); tab yang tidur melewati tengah malam lalu dibuka dari notifikasi langsung melihat tagihan & saldo hari ini. Jawabannya
+membawa hari WIB server: kalau jam perangkat lebih cepat dan server masih di hari kemarin, tab mencoba lagi (5 dtk, maks 3×). Pemicu
+yang datang selagi aksi lain berjalan tidak dibuang, tapi dijalankan sesudahnya. Tagihan ⚡ yang pasti terhalang (aturan dijeda,
+dompet/goal dihapus, goal tercapai) disaring sebelum membuka transaksi (`autoPostPrecheck` + cek dompet/goal sekali per aturan).
+
 **Pengumuman.** Kiriman baru (tagihan / catatan otomatis ber-id di atas penanda `mail` di akun) diumumkan sekali: "🔁 Spotify sudah
 dicatat otomatis. 📮 Pak Pos mengantar 2 tagihan." Tanpa animasi kalau sistem minta *kurangi gerakan*, tur sedang jalan, atau layar
-penuh terbuka.
+penuh terbuka (`postman.walk`: Pak Pos langsung berdiri di kotak pos, tidak berjalan). Tagihan yang belum diumumkan (juga yang datang
+bersama halaman) baru tampil (amplop, "🧾 n tagihan") setelah Pak Pos berjalan dari dermaga mengantarnya. Selama tersembunyi ia
+diparkir di papan dermaga tapi tidak bisa diklik (raycast dimatikan), jadi papan/dermaga di belakangnya tetap bisa diklik.
 
 **Privasi.** Pesan, label dunia (kotak pos: "🧾 2 tagihan"), dan chip HUD hanya berisi jumlah / nama tagihan, tidak pernah nominal;
 nominal di panel lewat `<Money/>` / `AmountInput` dan toast `-Rp…` di kotak pos ikut mode sembunyikan angka.
@@ -379,7 +401,9 @@ Cara kerjanya:
   `0 0 * * *` → `/api/cron/postman`, `0 13 * * *` → `/api/cron/reminders`. Keduanya menjalankan Pak Pos untuk semua user dulu
   (`processDueRecurring`, maks 30 dtk), lalu membaca langganan, pilihan, tagihan, dan catatan hari ini per batch (`IN …`, tanpa query
   per user), mengklaim, lalu mengirim (maks 8 sekaligus, satu notifikasi per perangkat, `TTL` sampai tengah malam WIB / maks 12 jam
-  untuk tagihan, `topic` = jenis + hari). Runtime Node, `maxDuration = 60`. Hasil kirim: 404/410/401/403 → langganan dihapus
+  untuk tagihan, `topic` = jenis + hari). Runtime Node, `maxDuration = 60`: kiriman baru tidak dimulai setelah 40 dtk
+  (`CRON_SEND_BUDGET_MS` = 60 − 10 batas satu kiriman − 10 cadangan beres-beres & cold start), dan kalau waktunya sudah habis
+  sebelum mengklaim, tidak ada yang diklaim (putaran berikutnya mencoba lagi). Hasil kirim: 404/410/401/403 → langganan dihapus
   (perangkatnya berlangganan ulang sendiri saat desa dibuka); gagal lain → `failureCount` naik, dihapus di kegagalan ke-5; berhasil →
   `failureCount` 0 + `lastSuccessAt`. Kunci VAPID dicek berpasangan sebelum dipakai, jadi kunci yang tertukar tidak menghapus semua
   langganan.
@@ -425,7 +449,8 @@ app/
   api/cron/reminders      cron 20:xx WIB: susulan Pak Pos + push lampu belum menyala & tagihan yang belum dikabarkan
 lib/
   snapshot.ts             satu query gabungan + rumus skor kesehatan (disalin dari tepira/lib/report-scoring.ts)
-  wallet-expenses.ts      port dari tepira (aturan potong/kembalikan saldo dompet, increment atomik); createExpenseInTx untuk tagihan
+  wallet-expenses.ts      port dari tepira (aturan potong/kembalikan saldo dompet, increment atomik, baris pengeluaran dikunci saat
+                          ubah/hapus); createExpenseInTx untuk tagihan
   game.ts                 tipe Snapshot, level/XP, tahap bangunan, hari WIB, streak & warga, bangunan level, kejar deadline
   quick-entry.ts          pengurai "catat cepat": kalimat → nominal, kategori, dompet, tanggal, tempat, catatan
   spoken-amount.ts        🎤 bilangan yang diucapkan → angka ("lima belas ribu" → "Rp15.000") sebelum quick-entry
@@ -441,9 +466,11 @@ lib/
   db-missing.ts           jaring urutan rilis: isMissingTable, readOrMissing, pesan ramah kalau tabel baru belum ada
   recurring.ts            tagihan rutin (murni): jadwal WIB (dijepit akhir bulan), otomatis vs tagihan, terhalang, label, validasi
   recurring-server.ts     (server) baca untuk snapshot, buat & selesaikan tagihan (aman bersamaan), aksi user, fungsi untuk cron
+  postman.ts              fase Pak Pos (murni + tes): kiriman baru dengan/tanpa animasi, berdiri di kotak pos, bisa diklik
   reminders.ts            pengingat (murni): siapa dapat apa, teks notifikasi tanpa nominal, TTL/topic, status kirim, kirim paralel
   push-subscription.ts    validasi langganan push dari browser (host layanan push yang dikenal), label perangkat
   push-send.ts            (server) kunci VAPID (dicek berpasangan), pengirim web-push & mode log
+  vapid-key.ts            normalisasi env VAPID yang sama untuk browser & server (kutip/spasi, base64url)
   push-server.ts          (server) WebPushSubscription & ReminderPreference: status, simpan (pindah akun), hapus, pilihan, tes
   reminder-cron.ts        (server) putaran cron: Pak Pos, rencana, klaim per hari, kirim, bereskan langganan mati
   cron-auth.ts            Bearer CRON_SECRET waktu-konstan, gagal tertutup
@@ -520,7 +547,7 @@ tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
 | `AUTH_URL`                   | URL app ini, mis. `http://localhost:3000`                                                   |
 | `GOOGLE_CLIENT_ID/SECRET`    | Boleh pakai OAuth client yang sama dengan tepira; **tambahkan redirect URI** `<AUTH_URL>/api/auth/callback/google`. Nama `AUTH_GOOGLE_ID/SECRET` juga diterima. |
 | `APP_PIN` (opsional)         | Sama seperti tepira: angka disembunyikan sampai PIN dimasukkan. Notifikasi pengingat jadi umum (tanpa jumlah). |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. Kutip/spasi pembungkus dibuang sama di browser & server (`lib/vapid-key.ts`). |
 | `VAPID_PRIVATE_KEY` (opsional) | Pasangan kunci privatnya (Sensitive). Dicek berpasangan; tidak cocok = pengingat dianggap belum diatur. |
 | `VAPID_SUBJECT` (opsional)   | `mailto:<kontak>` atau `https://<domain desa>`, bukan localhost.                            |
 | `CRON_SECRET`                | Rahasia cron (`/api/cron/postman`, `/api/cron/reminders`), acak & panjang (`openssl rand -hex 32`), Sensitive. Kosong = cron selalu 401, jadi Pak Pos & pengingat tidak jalan dari cron. Terpisah dari milik tepira. |

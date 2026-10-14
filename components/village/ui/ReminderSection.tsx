@@ -23,6 +23,12 @@ import { useVillage } from "../store";
 
 type Note = { text: string; ok: boolean } | null;
 
+/**
+ * Server action bisa MELEMPAR di browser (jaringan putus, deploy baru mengganti id aksi, 504), bukan
+ * hanya menjawab { ok: false }. Tiap tombol menangkapnya supaya kontrolnya tidak terkunci (busy).
+ */
+const OFFLINE_NOTE: Note = { text: "Gagal terhubung ke server. Coba lagi.", ok: false };
+
 const PREF_ROWS: { key: keyof ReminderPrefs; title: string; desc: string }[] = [
   {
     key: "lampReminder",
@@ -74,24 +80,28 @@ export default function ReminderSection() {
     if (busy) return;
     setBusy(true);
     setNote(null);
-    // requestPermission harus jadi await pertama setelah klik (lihat enablePush).
-    const res = await enablePush();
-    setPermission(notificationPermission());
-    if (!res.ok) {
-      setNote({ text: res.message, ok: false });
+    try {
+      // requestPermission harus jadi await pertama setelah klik (lihat enablePush).
+      const res = await enablePush();
+      setPermission(notificationPermission());
+      if (!res.ok) {
+        setNote({ text: res.message, ok: false });
+        return;
+      }
+      const saved = await savePushSubscription(res.sub);
+      if (saved.ok) {
+        writePushWanted(owner, true);
+        setEndpoint(res.sub.endpoint ?? null);
+        setStatus(saved.status);
+        setNote({ text: "🔔 Pengingat menyala di perangkat ini. Coba \"Kirim tes\".", ok: true });
+      } else {
+        setNote({ text: saved.message, ok: false });
+      }
+    } catch {
+      setNote(OFFLINE_NOTE);
+    } finally {
       setBusy(false);
-      return;
     }
-    const saved = await savePushSubscription(res.sub);
-    if (saved.ok) {
-      writePushWanted(owner, true);
-      setEndpoint(res.sub.endpoint ?? null);
-      setStatus(saved.status);
-      setNote({ text: "🔔 Pengingat menyala di perangkat ini. Coba \"Kirim tes\".", ok: true });
-    } else {
-      setNote({ text: saved.message, ok: false });
-    }
-    setBusy(false);
   };
 
   const onDisable = async () => {
@@ -112,11 +122,16 @@ export default function ReminderSection() {
     if (busy || !endpoint) return;
     setBusy(true);
     setNote(null);
-    const res = await sendTestPush(endpoint);
-    if (res.ok) setStatus(res.status);
-    else await refresh().catch(() => undefined);
-    setNote({ text: res.ok ? res.message ?? "Terkirim." : res.message, ok: res.ok });
-    setBusy(false);
+    try {
+      const res = await sendTestPush(endpoint);
+      if (res.ok) setStatus(res.status);
+      else await refresh().catch(() => undefined);
+      setNote({ text: res.ok ? res.message ?? "Terkirim." : res.message, ok: res.ok });
+    } catch {
+      setNote(OFFLINE_NOTE);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onToggle = async (key: keyof ReminderPrefs) => {
@@ -126,23 +141,35 @@ export default function ReminderSection() {
     setBusy(true);
     setNote(null);
     setStatus({ ...status, prefs: { ...status.prefs, [key]: next } });
-    const res = await updateReminderPrefs({ [key]: next }, endpoint);
-    if (res.ok) setStatus(res.status);
-    else {
+    try {
+      const res = await updateReminderPrefs({ [key]: next }, endpoint);
+      if (res.ok) setStatus(res.status);
+      else {
+        setStatus(before);
+        setNote({ text: res.message, ok: false });
+      }
+    } catch {
+      // Belum tentu sampai ke server: tampilkan lagi pilihan yang lama (yang tersimpan di akun).
       setStatus(before);
-      setNote({ text: res.message, ok: false });
+      setNote(OFFLINE_NOTE);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   const onForget = async (id: number) => {
     if (busy) return;
     setBusy(true);
     setNote(null);
-    const res = await forgetPushDevice(id, endpoint);
-    if (res.ok) setStatus(res.status);
-    else setNote({ text: res.message, ok: false });
-    setBusy(false);
+    try {
+      const res = await forgetPushDevice(id, endpoint);
+      if (res.ok) setStatus(res.status);
+      else setNote({ text: res.message, ok: false });
+    } catch {
+      setNote(OFFLINE_NOTE);
+    } finally {
+      setBusy(false);
+    }
   };
 
   let body: ReactNode;

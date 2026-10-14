@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import webpush from "web-push";
 import { checkVapid, endpointHost, logSender, serverSender, validSubject, vapidKeysMatch, webPushSender } from "./push-send";
-import { testMessage } from "./reminders";
+import { SEND_TIMEOUT_MS, testMessage } from "./reminders";
+import { publicVapidKey } from "./vapid-key";
 
 // Kunci sekali pakai, hanya di memori proses tes (tidak pernah dicetak atau disimpan).
 const keys = webpush.generateVAPIDKeys();
@@ -56,7 +57,7 @@ test("webPushSender: opsi web-push per kiriman, status dari WebPushError", async
   assert.equal(options.TTL, 120);
   assert.equal(options.topic, "tes");
   assert.equal(options.urgency, "normal");
-  assert.equal(options.timeout, 10_000);
+  assert.equal(options.timeout, SEND_TIMEOUT_MS, "anggaran waktu cron menghitung batas ini");
   assert.deepEqual(options.vapidDetails, cfg.config);
 
   const gone = webPushSender(cfg.config, (async () => {
@@ -87,4 +88,20 @@ test("logSender & serverSender: mode log tidak mengirim dan tidak mencatat endpo
   assert.equal(serverSender({ PUSH_SEND_MODE: "log" }), logSender);
   assert.equal(serverSender({}), null);
   assert.equal(typeof serverSender(env()), "function");
+});
+
+test("kunci publik VAPID di browser dinormalkan sama dengan server (#20)", () => {
+  // Diisi berkutip di dashboard Vercel (seperti .env.example): server menganggapnya sah…
+  const quoted = ` "${keys.publicKey}" `;
+  assert.equal(checkVapid(env({ NEXT_PUBLIC_VAPID_PUBLIC_KEY: quoted })).ok, true);
+  // …jadi browser harus memakai kunci yang sama (tanpa kutip), bukan string yang membuat atob melempar.
+  assert.equal(publicVapidKey(quoted), keys.publicKey);
+  assert.equal(publicVapidKey(keys.publicKey), keys.publicKey);
+  const b64 = publicVapidKey(quoted).replace(/-/g, "+").replace(/_/g, "/");
+  assert.equal(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)).length, 65);
+  // Kunci rusak = "belum diatur" di browser, sama dengan server (problem "keys").
+  assert.equal(publicVapidKey("bukan+base64url"), "");
+  assert.equal(checkVapid(env({ NEXT_PUBLIC_VAPID_PUBLIC_KEY: "bukan+base64url" })).ok, false);
+  assert.equal(publicVapidKey(undefined), "");
+  assert.equal(publicVapidKey("  "), "");
 });

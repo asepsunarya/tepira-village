@@ -6,16 +6,23 @@ import { normalizePlaceName } from "@/lib/places";
 import { isMissingTable, knownMissing, noteMissingTable, readOrMissing } from "@/lib/db-missing";
 import {
   EMPTY_SYNC_DATA,
+  MAX_REMOVED_MARKS,
+  REMOVED_KEY_PREFIX,
   VILLAGE_STATE_KEYS,
   cleanNoSpendDays,
   cleanPlaceName,
   importableLimits,
   isTerminalTour,
-  noSpendAllowed,
+  noSpendOpAllowed,
+  notRemovedLimits,
   parseLetterKey,
   parseMail,
+  parseRemovedKeys,
   parseSeen,
   parseTour,
+  removedDayKey,
+  removedPlaceKey,
+  type RemovedMarks,
   type Seen,
   type StoredTour,
   type SyncOp,
@@ -27,10 +34,11 @@ import {
  * Data desa per user di database (HANYA server; jangan diimpor dari kode client). Aturannya sama
  * dengan applySyncOp di lib/village-sync.ts, hanya saja ditulis sebagai query yang aman dijalankan
  * bersamaan dari beberapa perangkat:
- * - NoSpendDay: tandai = createMany skipDuplicates (hanya hari ini..2 hari lalu), batalkan = deleteMany.
+ * - NoSpendDay: tandai = createMany skipDuplicates (made-2..made, lihat noSpendOpAllowed), batalkan = deleteMany.
  * - PlaceSpendLimit: upsert/hapus per (userId, placeKey); tempat baru ditolak kalau sudah 50.
  * - VillageState: "letter" ditimpa, "seen" GREATEST per angka, "tour" selesai/dilewati tidak ditimpa
- *   "active" kecuali tur diulang, "mail" (penanda kiriman Pak Pos) GREATEST.
+ *   "active" kecuali tur diulang, "mail" (penanda kiriman Pak Pos) GREATEST, dan "rm:n:<hari>" /
+ *   "rm:p:<tempat>" = batal nol pengeluaran / hapus batas (supaya impor v1 tidak menghidupkannya lagi).
  * Tabel baru ber-userId NOT NULL: selalu `{ userId }`, bukan userOwnedWhere.
  */
 
@@ -50,7 +58,7 @@ export async function loadVillageSync(userId: string, now = Date.now()): Promise
 }
 
 async function readVillageSync(userId: string, today: number): Promise<VillageSyncData> {
-  const [days, limits, flags] = await Promise.all([
+  const [days, limits, flags, removed] = await Promise.all([
     prisma.noSpendDay.findMany({
       where: { userId, day: { gte: wibDayDate(today - ACTIVITY_WINDOW_DAYS + 1) } },
       select: { day: true },
@@ -65,7 +73,8 @@ async function readVillageSync(userId: string, today: number): Promise<VillageSy
     prisma.villageState.findMany({
       where: { userId, key: { in: [...VILLAGE_STATE_KEYS] } },
       select: { key: true, value: true }
-    })
+    }),
+    readRemoved(userId, today)
   ]);
   const flag = (key: string) => flags.find((f) => f.key === key)?.value;
   return {
@@ -77,8 +86,29 @@ async function readVillageSync(userId: string, today: number): Promise<VillageSy
     letter: parseLetterKey(flag("letter")),
     seen: parseSeen(flag("seen")),
     tour: parseTour(flag("tour")),
-    mail: parseMail(flag("mail"))
+    mail: parseMail(flag("mail")),
+    removed
   };
+}
+
+/** Yang sengaja dihapus user (baris VillageState "rm:…"), terbaru dulu, maks MAX_REMOVED_MARKS per jenis. */
+async function readRemoved(userId: string, today: number): Promise<RemovedMarks> {
+  const rows = await prisma.villageState.findMany({
+    where: { userId, key: { startsWith: REMOVED_KEY_PREFIX } },
+    select: { key: true },
+    orderBy: { updatedAt: "desc" },
+    take: MAX_REMOVED_MARKS * 2
+  });
+  return parseRemovedKeys(rows.map((r) => r.key), today);
+}
+
+/** Tandai (true) / hapus (false) satu tanda "sengaja dihapus". */
+async function setRemoved(userId: string, key: string, removed: boolean) {
+  if (removed) {
+    await prisma.villageState.createMany({ data: [{ userId, key, value: true }], skipDuplicates: true });
+  } else {
+    await prisma.villageState.deleteMany({ where: { userId, key } });
+  }
 }
 
 /**
@@ -105,13 +135,20 @@ async function applyOne(userId: string, op: SyncOp, today: number) {
     case "nospend":
       if (!op.on) {
         await prisma.noSpendDay.deleteMany({ where: { userId, day: wibDayDate(op.day) } });
-      } else if (noSpendAllowed(op.day, today)) {
+        await setRemoved(userId, removedDayKey(op.day), true);
+      } else if (noSpendOpAllowed(op, today)) {
+        // Batas mundur dihitung dari hari op dibuat (made), bukan hari ini: tanda yang lama menunggu di
+        // outbox (offline, tabel belum ada) tetap tersimpan.
         await prisma.noSpendDay.createMany({ data: [{ userId, day: wibDayDate(op.day) }], skipDuplicates: true });
+        await setRemoved(userId, removedDayKey(op.day), false);
       }
       return;
-    case "limit":
-      await setPlaceSpendLimit(userId, op.name, op.limit);
+    case "limit": {
+      const stored = await setPlaceSpendLimit(userId, op.name, op.limit);
+      const placeKey = normalizePlaceName(cleanPlaceName(op.name));
+      if (stored && placeKey) await setRemoved(userId, removedPlaceKey(placeKey), op.limit === null);
       return;
+    }
     case "letter":
       await prisma.villageState.upsert({
         where: { userId_key: { userId, key: "letter" } },
@@ -128,6 +165,8 @@ async function applyOne(userId: string, op: SyncOp, today: number) {
     case "tour": {
       const tour: StoredTour = { status: op.status, step: op.step };
       if (op.restart || op.status !== "active") {
+        // ❓ = tur diulang dengan sengaja: ditandai supaya impor v1 dari perangkat lain tidak menutupnya.
+        if (op.restart && op.status === "active") tour.restarted = true;
         await prisma.villageState.upsert({
           where: { userId_key: { userId, key: "tour" } },
           create: { userId, key: "tour", value: jsonValue(tour) },
@@ -139,16 +178,19 @@ async function applyOne(userId: string, op: SyncOp, today: number) {
       return;
     }
     case "import": {
-      const days = op.noSpend.filter((d) => d > today - ACTIVITY_WINDOW_DAYS && d <= today);
+      // Impor tidak menghidupkan lagi yang sengaja dihapus di akun (dari perangkat mana pun).
+      const removed = op.noSpend.length || op.limits.length ? await readRemoved(userId, today) : EMPTY_SYNC_DATA.removed;
+      const days = op.noSpend.filter((d) => d > today - ACTIVITY_WINDOW_DAYS && d <= today && !removed.days.includes(d));
       if (days.length) {
         await prisma.noSpendDay.createMany({
           data: days.map((d) => ({ userId, day: wibDayDate(d) })),
           skipDuplicates: true
         });
       }
-      if (op.limits.length) {
+      const limits = notRemovedLimits(removed, op.limits);
+      if (limits.length) {
         const existing = await prisma.placeSpendLimit.findMany({ where: { userId }, select: { placeKey: true } });
-        const add = importableLimits(new Set(existing.map((r) => r.placeKey)), op.limits);
+        const add = importableLimits(new Set(existing.map((r) => r.placeKey)), limits);
         if (add.length) {
           await prisma.placeSpendLimit.createMany({
             data: add.map((l) => ({
@@ -161,16 +203,11 @@ async function applyOne(userId: string, op: SyncOp, today: number) {
           });
         }
       }
-      if (op.letter) {
-        await prisma.villageState.createMany({
-          data: [{ userId, key: "letter", value: jsonValue(op.letter) }],
-          skipDuplicates: true
-        });
-      }
+      if (op.letter) await importLetter(userId, op.letter);
       if (op.seen) await raiseSeen(userId, op.seen);
       if (op.tour) {
         if (isTerminalTour(op.tour)) {
-          await writeTourUnlessFinished(userId, op.tour);
+          await closeTourFromImport(userId, op.tour);
         } else {
           await prisma.villageState.createMany({
             data: [{ userId, key: "tour", value: jsonValue(op.tour) }],
@@ -183,25 +220,29 @@ async function applyOne(userId: string, op: SyncOp, today: number) {
   }
 }
 
-/** Pasang/ganti (rupiah bulat) atau hapus (null) batas jajan satu tempat. Tempat ke-51 diabaikan. */
-async function setPlaceSpendLimit(userId: string, name: string, limit: number | null) {
+/**
+ * Pasang/ganti (rupiah bulat) atau hapus (null) batas jajan satu tempat. Tempat ke-51 diabaikan.
+ * true = tersimpan (dipasang, diganti, atau dihapus); false = ditolak (nama kosong / sudah 50 tempat).
+ */
+async function setPlaceSpendLimit(userId: string, name: string, limit: number | null): Promise<boolean> {
   const placeName = cleanPlaceName(name);
   const placeKey = normalizePlaceName(placeName);
-  if (!placeKey) return;
+  if (!placeKey) return false;
   if (limit === null) {
     await prisma.placeSpendLimit.deleteMany({ where: { userId, placeKey } });
-    return;
+    return true;
   }
   // Hitungan di transaksi yang sama; balapan dua perangkat paling-paling lebih satu, tidak apa-apa.
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const where = { userId_placeKey: { userId, placeKey } };
     const exists = await tx.placeSpendLimit.findUnique({ where, select: { placeKey: true } });
-    if (!exists && (await tx.placeSpendLimit.count({ where: { userId } })) >= MAX_PLACE_LIMITS) return;
+    if (!exists && (await tx.placeSpendLimit.count({ where: { userId } })) >= MAX_PLACE_LIMITS) return false;
     await tx.placeSpendLimit.upsert({
       where,
       create: { userId, placeKey, placeName, monthlyLimit: limit },
       update: { placeName, monthlyLimit: limit }
     });
+    return true;
   });
 }
 
@@ -237,14 +278,54 @@ async function raiseMail(userId: string, occ: number) {
       "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')`;
 }
 
-/** Tulis tur kecuali yang tersimpan sudah selesai/dilewati (tur di perangkat lain sudah ditutup). */
+/**
+ * Langkah tur ("active" biasa): ditulis kecuali yang tersimpan sudah selesai/dilewati (tur di perangkat
+ * lain sudah ditutup). Tanda "diulang lewat ❓" pada tur yang sedang jalan dipertahankan.
+ */
 async function writeTourUnlessFinished(userId: string, tour: StoredTour) {
   await prisma.$executeRaw`
     INSERT INTO "VillageState" ("userId", "key", "value", "createdAt", "updatedAt")
     VALUES (${userId}, 'tour', ${JSON.stringify({ status: tour.status, step: tour.step })}::jsonb,
       (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'), (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
-    ON CONFLICT ("userId", "key") DO UPDATE SET "value" = EXCLUDED."value", "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+    ON CONFLICT ("userId", "key") DO UPDATE SET
+      "value" = EXCLUDED."value" || CASE
+        WHEN "VillageState"."value"->>'status' = 'active' AND "VillageState"."value"->'restarted' = 'true'::jsonb
+        THEN '{"restarted": true}'::jsonb ELSE '{}'::jsonb END,
+      "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
     WHERE COALESCE("VillageState"."value"->>'status', '') NOT IN ('done', 'skipped')`;
+}
+
+/**
+ * Impor: tur yang selesai/dilewati di perangkat lama menutup tur yang masih "active" di akun, KECUALI
+ * tur itu diulang dengan sengaja lewat ❓ (restarted) setelahnya.
+ */
+async function closeTourFromImport(userId: string, tour: StoredTour) {
+  await prisma.$executeRaw`
+    INSERT INTO "VillageState" ("userId", "key", "value", "createdAt", "updatedAt")
+    VALUES (${userId}, 'tour', ${JSON.stringify({ status: tour.status, step: tour.step })}::jsonb,
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'), (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
+    ON CONFLICT ("userId", "key") DO UPDATE SET "value" = EXCLUDED."value", "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+    WHERE COALESCE("VillageState"."value"->>'status', '') NOT IN ('done', 'skipped')
+      AND NOT ("VillageState"."value"->>'status' = 'active' AND "VillageState"."value"->'restarted' = 'true'::jsonb)`;
+}
+
+/**
+ * Impor surat: diisi kalau akun belum punya, atau diganti kalau yang diimpor lebih baru (kunci sejenis,
+ * angka lebih besar; sama dengan newerLetterKey). Bukan "perangkat yang mengimpor duluan menang". Isi
+ * lama yang rusak dianggap belum ada (sama dengan parseLetterKey yang mengembalikan null di browser).
+ * CASE menjamin urutan: ::bigint hanya dihitung untuk kunci yang sah. SQL-nya sengaja ASCII saja.
+ */
+async function importLetter(userId: string, letter: string) {
+  await prisma.$executeRaw`
+    INSERT INTO "VillageState" ("userId", "key", "value", "createdAt", "updatedAt")
+    VALUES (${userId}, 'letter', to_jsonb(${letter}::text),
+      (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'), (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
+    ON CONFLICT ("userId", "key") DO UPDATE SET "value" = EXCLUDED."value", "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+    WHERE CASE
+      WHEN jsonb_typeof("VillageState"."value") <> 'string' OR ("VillageState"."value" #>> '{}') !~ '^[iw][0-9]{1,12}$' THEN true
+      WHEN left("VillageState"."value" #>> '{}', 1) <> left(EXCLUDED."value" #>> '{}', 1) THEN false
+      ELSE substr("VillageState"."value" #>> '{}', 2)::bigint < substr(EXCLUDED."value" #>> '{}', 2)::bigint
+    END`;
 }
 
 // ── Untuk cron pengingat & fitur lain ────────────────────────────────────────

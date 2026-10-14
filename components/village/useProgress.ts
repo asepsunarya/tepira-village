@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DAY_MS, WIB_OFFSET_MS, computeStreak, levelFor, villageXp, wibDay } from "@/lib/game";
-import { billItems, type BillContext, type BillItem } from "@/lib/recurring";
+import { billItems, hasUnannouncedBills, type BillContext, type BillItem } from "@/lib/recurring";
 import { letterKey } from "./daily";
 import { useVillage } from "./store";
 
@@ -69,9 +69,17 @@ export function useBills(): BillItem[] {
   );
 }
 
-/** Kotak pos: surat Cyrene belum dibuka & jumlah tagihan yang menunggu (tanpa nominal). */
+/**
+ * Kotak pos: surat Cyrene belum dibuka & jumlah tagihan yang menunggu (tanpa nominal). delivered = amplop
+ * tagihan boleh tampil (label "🧾 n tagihan", amplop di kotak pos, Pak Pos langsung berdiri di sana): Pak Pos
+ * sudah tiba DAN tidak ada tagihan yang belum diumumkan. Tagihan baru, termasuk yang ikut snapshot pertama,
+ * baru tampil setelah Pak Pos berjalan dari dermaga mengantarnya.
+ */
 export function useMail() {
   const { unread } = useLetter();
   const bills = useVillage((s) => (s.snapshot?.recurring.available ? s.snapshot.recurring.bills.length : 0));
-  return { unread, bills };
+  const delivered = useVillage(
+    (s) => s.mailDelivered && !(s.snapshot && hasUnannouncedBills(s.snapshot.recurring, s.mailSeen))
+  );
+  return { unread, bills, delivered };
 }

@@ -1,4 +1,5 @@
 import { removePushSubscription } from "@/app/village/push-actions";
+import { publicVapidKey } from "@/lib/vapid-key";
 import { writePushWanted } from "./daily";
 
 /**
@@ -7,8 +8,12 @@ import { writePushWanted } from "./daily";
  * iPhone, Firefox tanpa layanan push, dsb.) dijawab lewat pushEnv(), tidak pernah melempar ReferenceError.
  */
 
-/** Diisi saat build (NEXT_PUBLIC_*): mengganti kunci butuh deploy ulang, perangkat berlangganan ulang sendiri. */
-export const VAPID_PUBLIC_KEY = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+/**
+ * Diisi saat build (NEXT_PUBLIC_*): mengganti kunci butuh deploy ulang, perangkat berlangganan ulang sendiri.
+ * Dinormalkan sama dengan server (kutip/spasi dari dashboard dibuang, lib/vapid-key.ts): server yang bilang
+ * "sudah diatur" berarti browser juga bisa berlangganan. Bukan base64url = "" → "belum diatur".
+ */
+export const VAPID_PUBLIC_KEY = publicVapidKey(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 
 export type PushEnv = "ok" | "ios-install" | "unsupported" | "not-configured";
 

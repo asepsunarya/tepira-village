@@ -37,6 +37,20 @@ export const BILL_NAG_DAYS = 3;
 /** Kegagalan kirim beruntun (selain 404/410/401/403 yang langsung dihapus) sebelum langganan dihapus. */
 export const MAX_PUSH_FAILURES = 5;
 export const SEND_CONCURRENCY = 8;
+
+// ── Anggaran waktu cron ──────────────────────────────────────────────────────
+/** maxDuration route cron (literal di app/api/cron/{postman,reminders}/route.ts; tes memeriksa sama). */
+export const CRON_MAX_DURATION_S = 60;
+/** Batas satu kiriman web-push (socket idle di web-push): layanan push yang macet menahan kiriman selama ini. */
+export const SEND_TIMEOUT_MS = 10_000;
+/** Cadangan untuk membereskan hasil kirim (4–6 tulis berurutan, connection_limit=1) dan cold start. */
+export const CRON_CLEANUP_RESERVE_MS = 10_000;
+/**
+ * Sejak awal putaran, tidak ada kiriman baru yang dimulai setelah sekian ms (sisanya "skipped" & klaimnya
+ * dikembalikan). Kiriman terakhir yang macet (SEND_TIMEOUT_MS) plus beres-beres tetap selesai sebelum
+ * Vercel mematikan fungsi di maxDuration, jadi klaim yang gagal terkirim selalu sempat dikembalikan.
+ */
+export const CRON_SEND_BUDGET_MS = CRON_MAX_DURATION_S * 1000 - SEND_TIMEOUT_MS - CRON_CLEANUP_RESERVE_MS;
 /** Satu akun paling banyak sekian perangkat; yang paling lama tidak dipakai dibuang. */
 export const MAX_DEVICES_PER_USER = 10;
 

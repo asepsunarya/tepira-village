@@ -10,6 +10,8 @@ import { userOwnedWhere } from "@/lib/auth";
  * Bedanya satu: saldo diubah dengan `increment` atomik, bukan baca-hitung-tulis. Tagihan rutin
  * yang dicatat otomatis bisa berjalan bersamaan dengan catatan manual di dompet yang sama, dan
  * baca-hitung-tulis bisa menghilangkan salah satunya. (tepira sebaiknya di-port dengan cara yang sama.)
+ * Ubah/hapus membalik nominal LAMA pengeluarannya, jadi baris pengeluarannya dikunci dulu (lockExpense):
+ * dua tab yang mengubah/menghapus pengeluaran yang sama tidak membalik nominal lama dua kali.
  */
 type Tx = Prisma.TransactionClient;
 
@@ -76,8 +78,19 @@ export async function createExpenseWithWallet(userId: string, data: ExpenseInput
   return prisma.$transaction((tx) => createExpenseInTx(tx, userId, data));
 }
 
+/**
+ * Kunci baris pengeluaran sebelum dibaca. Tanpa ini dua transaksi bisa membaca nominal lama yang sama
+ * lalu sama-sama membaliknya ke dompet (increment), dan saldo bergeser diam-diam. Sesudah kunci,
+ * findFirst (READ COMMITTED) melihat nominal & dompet terbaru; urutan kunci sama di ubah & hapus
+ * (pengeluaran, lalu dompet), jadi keduanya tidak saling deadlock. Tabel tanpa @@map: "Expense".
+ */
+async function lockExpense(tx: Tx, expenseId: number) {
+  await tx.$queryRaw`SELECT 1 FROM "Expense" WHERE id = ${expenseId} FOR UPDATE`;
+}
+
 export async function deleteExpenseAndRestoreWallet(userId: string, expenseId: number) {
   return prisma.$transaction(async (tx) => {
+    await lockExpense(tx, expenseId);
     const expense = await tx.expense.findFirst({
       where: { id: expenseId, ...userOwnedWhere(userId) },
       include: { wallet: true }
@@ -115,6 +128,7 @@ export async function updateExpenseWithWallet(
   }
 ) {
   return prisma.$transaction(async (tx) => {
+    await lockExpense(tx, expenseId);
     const expense = await tx.expense.findFirst({
       where: { id: expenseId, ...userOwnedWhere(userId) },
       include: { wallet: true }

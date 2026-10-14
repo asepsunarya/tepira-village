@@ -1,6 +1,14 @@
 import { createECDH } from "node:crypto";
 import webpush from "web-push";
-import type { PushPayload, PushTarget, SendOptions, SendOutcome, Sender } from "@/lib/reminders";
+import {
+  SEND_TIMEOUT_MS,
+  type PushPayload,
+  type PushTarget,
+  type SendOptions,
+  type SendOutcome,
+  type Sender
+} from "@/lib/reminders";
+import { B64URL, envValue } from "@/lib/vapid-key";
 
 /**
  * Pengirim web push (HANYA server: web-push butuh crypto & https Node). Kunci VAPID dibaca dari env
@@ -17,9 +25,6 @@ export interface VapidConfig {
 export type VapidCheck =
   | { ok: true; config: VapidConfig }
   | { ok: false; problem: "missing" | "subject" | "keys" | "mismatch" };
-
-const B64URL = /^[A-Za-z0-9_-]+$/;
-const envValue = (v: string | undefined) => (v ?? "").trim().replace(/^"(.*)"$/, "$1").trim();
 
 /** mailto: atau https:, bukan localhost (Apple menolak dengan 403 BadJwtToken). */
 export function validSubject(subject: string) {
@@ -84,7 +89,7 @@ export function webPushSender(v: VapidConfig, send: SendNotification = webpush.s
           TTL: opts.ttl,
           topic: opts.topic,
           urgency: opts.urgency ?? "normal",
-          timeout: 10_000,
+          timeout: SEND_TIMEOUT_MS,
           vapidDetails: { subject: v.subject, publicKey: v.publicKey, privateKey: v.privateKey }
         }
       );

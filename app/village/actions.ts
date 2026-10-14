@@ -15,11 +15,12 @@ import type { ActionResult } from "@/lib/game";
 import { MISSING_TABLE_MESSAGE, isMissingTable } from "@/lib/db-missing";
 import { parseSyncOps, type SyncResult } from "@/lib/village-sync";
 import { applyVillageOps, loadVillageSync } from "@/lib/village-state";
-import { dayLabel, dueLabel, type RecurringInput } from "@/lib/recurring";
+import { dayLabel, dueLabel, snapshotFromEarlierDay, type RecurringInput } from "@/lib/recurring";
 import {
   createRecurringRule,
   deleteRecurringRule,
   processDueRecurring,
+  recurringChangedSince,
   setRecurringActive,
   settleBills,
   skipOlderBills,
@@ -85,20 +86,37 @@ export async function fetchSnapshot(period: Period): Promise<ActionResult> {
 
 // ── Tagihan & setoran rutin ("Pak Pos") ──────────────────────────────────────
 
-/** Hasil syncRecurring: changed:false = tidak ada tagihan baru / catatan otomatis, snapshot tidak dibangun. */
-export type RecurringSyncResult = { ok: true; changed: false } | ActionResult;
+/**
+ * Hasil syncRecurring: changed:false = snapshot tab itu masih terbaru, snapshot tidak dibangun.
+ * `day` = hari WIB yang dipakai server (jam browser bisa lebih cepat: tab mencoba lagi sebentar lagi).
+ */
+export type RecurringSyncResult = ({ ok: true; changed: false } | ActionResult) & { day?: number };
+
+/** Selisih waktu antar instance server; tulisan di sekitar waktu snapshot dibuat tetap terhitung. */
+const SINCE_SLACK_MS = 5_000;
 
 /**
- * Aksi ringan saat hari WIB berganti / tab kembali dilihat: proses jatuh tempo, dan snapshot hanya
- * dibangun kalau memang ada yang berubah.
+ * Aksi ringan saat hari WIB berganti / tab kembali dilihat: proses jatuh tempo, lalu snapshot baru
+ * dibangun kalau panggilan ini membuat/mencatat sesuatu, kalau snapshot tab (`since` = generatedAt)
+ * dari hari WIB sebelumnya, atau kalau tagihan rutin berubah sejak snapshot itu (cron pagi, perangkat
+ * lain). Tanpa itu tab yang tidur melewati tengah malam tidak pernah melihat tagihan yang dibuat cron.
  */
-export async function syncRecurring(period: Period): Promise<RecurringSyncResult> {
+export async function syncRecurring(period: Period, since?: string): Promise<RecurringSyncResult> {
   try {
     const userId = await requireUserId();
+    const day = wibDay(Date.now());
     const result = await processQuietly(userId);
-    if (!result || (!result.materialized && !result.posted)) return { ok: true, changed: false };
+    const now = Date.now();
+    // snapshotFromEarlierDay juga menangkap `since` yang kosong/rusak, jadi sinceMs di bawahnya sah.
+    const sinceMs = typeof since === "string" ? Date.parse(since) : Number.NaN;
+    const changed =
+      Boolean(result && (result.materialized || result.posted)) ||
+      (Boolean(result?.available) &&
+        (snapshotFromEarlierDay(since, now) ||
+          (await recurringChangedSince(userId, new Date(Math.min(sinceMs, now) - SINCE_SLACK_MS)))));
+    if (!changed) return { ok: true, changed: false, day };
     const { month, year } = normalizePeriod(period.month, period.year);
-    return { ok: true, snapshot: await buildSnapshot(userId, month, year) };
+    return { ok: true, snapshot: await buildSnapshot(userId, month, year), day };
   } catch (error) {
     console.error("[recurring sync]", error);
     return { ok: false, message: error instanceof Error ? error.message : "Terjadi kesalahan." };

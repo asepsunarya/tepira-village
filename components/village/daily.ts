@@ -4,6 +4,7 @@ import {
   compactOutbox,
   importFromLegacy,
   legacyFingerprint,
+  legacyImportNeeded,
   newerSync,
   parseSync,
   parseSyncOps,
@@ -103,7 +104,12 @@ const LEGACY_KEYS = {
   tour: "tepira-village-tour:v1:"
 } as const;
 
-/** Isinya = sidik jari kunci v1 saat diimpor: tab lama yang menulis lagi sesudahnya memicu impor ulang (aman, digabung). */
+/**
+ * Ada = kunci v1 perangkat ini sudah diimpor untuk akun ini (isinya sidik jari saat itu, hanya catatan).
+ * Impor TIDAK diulang walau tab lama menulis kunci v1 lagi: data lama yang sudah diimpor lalu sengaja
+ * dihapus di v2 (batas jajan, tanda nol pengeluaran) tidak boleh hidup lagi. Perubahan di tab versi
+ * lama setelah rilis memang tidak ikut sinkron.
+ */
 const IMPORT_FLAG_PREFIX = "tepira-village-synced:v1:";
 
 export function readLegacy(owner: string): LegacyRaw {
@@ -117,14 +123,14 @@ export function readLegacy(owner: string): LegacyRaw {
 }
 
 /**
- * Outbox pemilik ini. Pertama kali (atau kalau isi kunci v1 berubah sejak impor terakhir), data v1
- * ditambahkan sebagai satu op "import": langsung tampil di desa, dan terkirim seperti op lain begitu
- * server siap.
+ * Outbox pemilik ini. Pertama kali saja (sekali per perangkat + akun), data v1 ditambahkan sebagai satu
+ * op "import": langsung tampil di desa, menunggu di outbox (bertahan walau dimuat ulang), dan terkirim
+ * seperti op lain begitu server siap. Sesudahnya kunci v1 diabaikan (lihat IMPORT_FLAG_PREFIX).
  */
 export function prepareOutbox(owner: string, newId: string, today: number): SyncOp[] {
   const raw = readLegacy(owner);
   const fp = legacyFingerprint(raw);
-  if (!fp || readRaw(IMPORT_FLAG_PREFIX + owner) === fp) return readSyncCache(owner, today).outbox;
+  if (!fp || !legacyImportNeeded(readRaw(IMPORT_FLAG_PREFIX + owner), fp)) return readSyncCache(owner, today).outbox;
   const op = importFromLegacy(raw, newId, today);
   const cache = updateSyncCache(owner, today, (c) => ({ ...c, outbox: op ? [...c.outbox, op] : c.outbox }));
   writeRaw(IMPORT_FLAG_PREFIX + owner, fp);

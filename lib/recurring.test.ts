@@ -5,6 +5,7 @@ import { wibDayOf } from "./season";
 import {
   AUTO_MAX_AGE_DAYS,
   alignStart,
+  autoPostPrecheck,
   billItems,
   blockReason,
   canAutoPost,
@@ -14,6 +15,8 @@ import {
   dueBetween,
   dueLabel,
   firstOnOrAfter,
+  formDayOfMonth,
+  hasUnannouncedBills,
   inputDay,
   installmentLabel,
   installmentOrdinal,
@@ -25,9 +28,11 @@ import {
   occurrencesInRange,
   parseBillDecisions,
   parseRecurringInput,
+  rescheduledNextDue,
   ruleStatus,
   scheduleChanged,
   scheduleLabel,
+  snapshotFromEarlierDay,
   upcomingDues,
   type RecurrenceRule,
   type RecurringData,
@@ -364,6 +369,111 @@ test("scheduleChanged", () => {
   assert.equal(scheduleChanged(cur, { ...same, firstDueDay: cur.nextDueDay + 1 }), true);
   assert.equal(scheduleChanged(cur, { ...same, every: 3 }), true);
   assert.equal(scheduleChanged(cur, { ...same, dayOfMonth: 15 }), true);
+  // Form yang tidak menyentuh jadwal (keepSchedule): nextDueDay basi dari tab lama bukan perubahan jadwal.
+  assert.equal(scheduleChanged(cur, { ...same, firstDueDay: cur.nextDueDay - 7, keepSchedule: true }), false);
+  assert.equal(scheduleChanged(cur, { ...same, every: 3, keepSchedule: true }), false);
+  const base = { kind: "expense", amount: 10_000, walletId: 1, frequency: "monthly", every: 1, firstDue: "2026-10-14", mode: "confirm" };
+  assert.equal(parseRecurringInput({ ...base, keepSchedule: true }).keepSchedule, true);
+  assert.equal(parseRecurringInput({ ...base, keepSchedule: "ya" }).keepSchedule, false);
+  assert.equal(parseRecurringInput(base).keepSchedule, false);
+});
+
+test("rescheduledNextDue: jadwal diubah setelah tagihan hari ini diantar, fase & hari pilihan tetap (#2, #9)", () => {
+  const today = D(2026, 10, 14); // Rabu
+  assert.equal(isoWeekday(today), 3);
+  // Mingguan → tiap 2 minggu mulai hari ini, tagihan hari ini sudah ada: 28 Okt (Rabu), bukan Kamis 15 Okt.
+  const weekly = { frequency: "weekly" as const, every: 2, dayOfMonth: null, firstDueDay: today };
+  const w = rescheduledNextDue(weekly, today, today);
+  assert.equal(w, D(2026, 10, 28));
+  assert.equal(isoWeekday(w), 3);
+  assert.equal(w, nextAfter({ ...weekly, startDay: today }, today));
+  // Tiap 3 bulan tgl 14 mulai hari ini: 14 Jan, bukan 14 Nov (tagihan otomatis dua bulan lebih awal).
+  const quarterly = { frequency: "monthly" as const, every: 3, dayOfMonth: 14, firstDueDay: today };
+  assert.equal(rescheduledNextDue(quarterly, today, today), D(2027, 1, 14));
+  assert.equal(rescheduledNextDue(quarterly, today, today), nextAfter({ ...quarterly, startDay: today }, today));
+  // Bulanan & tahunan tetap seperti dulu.
+  assert.equal(rescheduledNextDue({ frequency: "monthly", every: 1, dayOfMonth: 14, firstDueDay: today }, today, today), D(2026, 11, 14));
+  assert.equal(rescheduledNextDue({ frequency: "yearly", every: 1, dayOfMonth: 14, firstDueDay: today }, today, today), D(2027, 10, 14));
+  // Belum ada tagihan / tagihan terakhir lebih lama: mulai di tanggal pilihan.
+  assert.equal(rescheduledNextDue(weekly, today, null), today);
+  assert.equal(rescheduledNextDue(weekly, today, today - 7), today);
+  // Tanggal pilihan di depan: dipakai (diselaraskan ke tanggal tagihan untuk bulanan).
+  assert.equal(rescheduledNextDue({ ...weekly, firstDueDay: today + 3 }, today, today), today + 3);
+  assert.equal(rescheduledNextDue({ ...quarterly, firstDueDay: D(2026, 10, 20) }, today, today), D(2026, 11, 14));
+});
+
+test("formDayOfMonth: patokan tgl 29/30 dari draft tidak jadi tgl 28 saat jatuh tempo pertama di Februari (#11, #16)", () => {
+  // "Jadikan rutin" dari pengeluaran 30 Jan 2027, dibuka 5 Feb: jatuh tempo pertama dijepit ke 28 Feb.
+  const expenseDay = D(2027, 1, 30);
+  const firstDue = firstOnOrAfter(monthly(expenseDay, 30), Math.max(D(2027, 2, 5), expenseDay + 1));
+  assert.equal(firstDue, D(2027, 2, 28));
+  const dom = formDayOfMonth("monthly", false, firstDue, 30);
+  assert.equal(dom, 30);
+  const start = alignStart("monthly", dom, firstDue);
+  assert.deepEqual(iso(seq({ frequency: "monthly", every: 1, dayOfMonth: dom, startDay: start }, 3)), [
+    "2027-02-28",
+    "2027-03-30",
+    "2027-04-30"
+  ]);
+  // tgl 30 di Februari kabisat; tgl 29 di Februari biasa; tahunan 29 Feb di tahun biasa.
+  assert.equal(formDayOfMonth("monthly", false, D(2028, 2, 29), 30), 30);
+  assert.equal(formDayOfMonth("monthly", false, D(2027, 2, 28), 29), 29);
+  assert.equal(formDayOfMonth("yearly", false, D(2027, 2, 28), 29), 29);
+  // Tanggal yang dipilih sendiri (patokan tidak cocok / dilepas): tanggalnya.
+  assert.equal(formDayOfMonth("monthly", false, D(2027, 3, 15), 30), 15);
+  assert.equal(formDayOfMonth("monthly", false, D(2027, 2, 28), null), 28);
+  assert.equal(formDayOfMonth("monthly", false, D(2027, 2, 27), 30), 27);
+  // Akhir bulan & mingguan tidak berubah.
+  assert.equal(formDayOfMonth("monthly", true, D(2027, 2, 28), 30), 31);
+  assert.equal(formDayOfMonth("monthly", false, D(2027, 2, 28), 31), 28);
+  assert.equal(formDayOfMonth("weekly", false, D(2027, 2, 28), 30), null);
+});
+
+test("autoPostPrecheck: tagihan yang pasti terhalang tidak membuka transaksi (#4)", () => {
+  const today = D(2026, 10, 14);
+  const auto = {
+    mode: "auto" as const,
+    kind: "expense" as const,
+    active: true,
+    maxOccurrences: null,
+    occurrenceCount: 1,
+    walletId: 7,
+    goalId: null
+  };
+  assert.equal(autoPostPrecheck(auto, today, today), true);
+  assert.equal(autoPostPrecheck({ ...auto, active: false }, today, today), false, "dijeda");
+  assert.equal(autoPostPrecheck({ ...auto, walletId: null }, today, today), false, "dompet dihapus (SetNull)");
+  assert.equal(autoPostPrecheck({ ...auto, kind: "saving", walletId: null, goalId: null }, today, today), false, "goal dihapus");
+  assert.equal(autoPostPrecheck({ ...auto, kind: "saving", walletId: null, goalId: 3 }, today, today), true);
+  assert.equal(autoPostPrecheck({ ...auto, mode: "confirm" }, today, today), false);
+  assert.equal(autoPostPrecheck(auto, today - AUTO_MAX_AGE_DAYS - 1, today), false, "terlalu tua");
+  // Jangan menyaring active:true saja: cicilan yang baru selesai tetap mencatat tagihan terakhirnya.
+  assert.equal(autoPostPrecheck({ ...auto, active: false, maxOccurrences: 12, occurrenceCount: 12 }, today, today), true);
+});
+
+test("hasUnannouncedBills: tagihan di atas penanda menunggu diantar Pak Pos (#14)", () => {
+  const bills = [
+    { id: 5, recurringId: 1, day: 1, amount: 1 },
+    { id: 9, recurringId: 1, day: 2, amount: 1 }
+  ];
+  const data = { available: true, bills };
+  assert.equal(hasUnannouncedBills(data, null), true, "belum ada penanda = semua baru");
+  assert.equal(hasUnannouncedBills(data, 5), true);
+  assert.equal(hasUnannouncedBills(data, 9), false, "sudah diumumkan (mis. di perangkat lain)");
+  assert.equal(hasUnannouncedBills({ available: true, bills: [] }, null), false);
+  assert.equal(hasUnannouncedBills({ available: false, bills }, null), false);
+});
+
+test("snapshotFromEarlierDay: snapshot dari hari WIB sebelumnya selalu diganti (#7)", () => {
+  const now = Date.parse("2026-10-14T00:30:00Z"); // 07:30 WIB
+  assert.equal(snapshotFromEarlierDay("2026-10-13T16:59:00Z", now), true, "23:59 WIB kemarin");
+  assert.equal(snapshotFromEarlierDay("2026-10-13T17:00:00Z", now), false, "00:00 WIB hari ini");
+  assert.equal(snapshotFromEarlierDay("2026-10-14T00:29:00Z", now), false);
+  assert.equal(snapshotFromEarlierDay(undefined, now), true);
+  assert.equal(snapshotFromEarlierDay("bukan tanggal", now), true);
+  assert.equal(snapshotFromEarlierDay(12345, now), true);
+  // Waktu dari masa depan dijepit ke sekarang: tidak bisa menahan pembaruan hari ini.
+  assert.equal(snapshotFromEarlierDay("2030-01-01T00:00:00Z", now), false);
 });
 
 test("parseBillDecisions", () => {

@@ -227,8 +227,7 @@ function StreakLabel() {
 
 /** Jumlah saja, tanpa nama tagihan atau nominal: label dunia terbaca orang di sebelah. */
 function MailboxLabel() {
-  const { unread, bills } = useMail();
-  const delivered = useVillage((s) => s.mailDelivered);
+  const { unread, bills, delivered } = useMail();
   const hasBills = bills > 0 && delivered;
   if (!unread && !hasBills) return null;
   return (

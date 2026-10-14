@@ -5,10 +5,14 @@ import path from "node:path";
 import { DAY_MS, WIB_OFFSET_MS, wibDay } from "./game";
 import {
   BILL_NAG_DAYS,
+  CRON_CLEANUP_RESERVE_MS,
+  CRON_MAX_DURATION_S,
   CRON_PATHS,
   CRON_POSTMAN,
   CRON_REMINDERS,
+  CRON_SEND_BUDGET_MS,
   NO_BILLS,
+  SEND_TIMEOUT_MS,
   billNoun,
   buildBillDigests,
   classifyPushStatus,
@@ -318,5 +322,18 @@ test("panelForBuka: ?buka= dari notifikasi → panel", () => {
   for (const kinds of ALL_KINDS) {
     const url = new URL(reminderMessage(kinds, { bills: ALL_DIGESTS[0], today: TODAY }).url, "https://desa.contoh.id");
     assert.equal(panelForBuka(url.searchParams.get("buka")), kinds.includes("bills") ? "letter" : "village");
+  }
+});
+
+test("anggaran waktu cron: kiriman terakhir + beres-beres selesai sebelum maxDuration (#19)", () => {
+  // Kiriman terakhir dimulai paling lambat di CRON_SEND_BUDGET_MS dan bisa macet SEND_TIMEOUT_MS; sesudahnya
+  // 4–6 tulis (sent/gone/failed/rollback) + cold start. Dulu 50 dtk + 10 dtk = tepat 60: tanpa sisa.
+  assert.ok(CRON_SEND_BUDGET_MS + SEND_TIMEOUT_MS + CRON_CLEANUP_RESERVE_MS <= CRON_MAX_DURATION_S * 1000);
+  assert.ok(CRON_CLEANUP_RESERVE_MS >= 5_000);
+  assert.equal(CRON_SEND_BUDGET_MS, 40_000);
+  // maxDuration di route harus literal (konfigurasi segmen Next); keduanya harus sama dengan konstanta.
+  for (const job of ["postman", "reminders"]) {
+    const src = readFileSync(path.join(process.cwd(), "app/api/cron", job, "route.ts"), "utf8");
+    assert.match(src, new RegExp(`export const maxDuration = ${CRON_MAX_DURATION_S};`), job);
   }
 });

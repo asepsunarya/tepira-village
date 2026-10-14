@@ -7,6 +7,7 @@ import { PUSH_TABLES } from "@/lib/push-server";
 import { RECURRING_TABLES, processDueRecurring, userIdsRecordedOn } from "@/lib/recurring-server";
 import { noSpendMarkedUserIds } from "@/lib/village-state";
 import {
+  CRON_SEND_BUDGET_MS,
   MAX_PUSH_FAILURES,
   SEND_CONCURRENCY,
   buildBillDigests,
@@ -54,6 +55,8 @@ export interface CronRunResult {
     failed: number;
     removed: number;
     rolledBack: number;
+    /** waktu habis sebelum mengklaim: tidak ada yang diklaim/dikirim, putaran berikutnya mencoba lagi */
+    outOfTime?: true;
   };
 }
 
@@ -127,11 +130,11 @@ export async function runReminderJob(opts: {
   dryRun?: boolean;
   /** APP_PIN aktif: isi notifikasi umum, tanpa jumlah */
   generic?: boolean;
-  /** waktu total (ms) sebelum berhenti memulai kiriman baru */
+  /** waktu total (ms) sebelum berhenti memulai kiriman baru; bawaan CRON_SEND_BUDGET_MS (sisa untuk beres-beres) */
   budgetMs?: number;
 }): Promise<CronRunResult> {
   const now = opts.now ?? Date.now();
-  const deadline = Date.now() + (opts.budgetMs ?? 50_000);
+  const deadline = Date.now() + (opts.budgetMs ?? CRON_SEND_BUDGET_MS);
   const today = wibDay(now);
   const dryRun = Boolean(opts.dryRun);
   const result: CronRunResult = { job: opts.job, today, dryRun, recurring: null, push: emptyPush() };
@@ -207,6 +210,12 @@ export async function runReminderJob(opts: {
   const planned = (k: ReminderKind) => plans.filter((p) => p.kinds.includes(k)).map((p) => p.userId);
   push.planned = { lamp: planned("lamp").length, bills: planned("bills").length };
   if (dryRun || !opts.sender) return result;
+  // Waktu habis (Pak Pos / query lambat): jangan mengklaim apa pun. Klaim yang semua kirimannya dilewati
+  // harus dikembalikan, dan pengembalian itu bisa terpotong saat fungsi dimatikan.
+  if (Date.now() >= deadline) {
+    push.outOfTime = true;
+    return result;
+  }
 
   // Klaim: paling banyak sekali per jenis per user per hari WIB, aman dari cron dobel & bersamaan.
   const todayDate = wibDayDate(today);
