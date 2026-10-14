@@ -16,6 +16,7 @@ import {
   dueLabel,
   firstOnOrAfter,
   formDayOfMonth,
+  billsShowing,
   hasUnannouncedBills,
   inputDay,
   installmentLabel,
@@ -497,4 +498,21 @@ test("parseBillDecisions", () => {
   assert.throws(() => parseBillDecisions([{ id: -1, action: "pay" }]), /tidak valid/);
   assert.throws(() => parseBillDecisions([{ id: 1, action: "pay", amount: 0 }]), /lebih dari 0/);
   assert.throws(() => parseBillDecisions(Array.from({ length: 25 }, (_, i) => ({ id: i + 1, action: "skip" }))), /Maksimal 24/);
+});
+
+test("formDayOfMonth: tahunan tidak menyimpan tanggal yang tidak ada (30 Feb), 29 Feb tetap", () => {
+  assert.equal(formDayOfMonth("yearly", false, D(2027, 2, 28), 30), 28);
+  assert.equal(formDayOfMonth("yearly", false, D(2027, 2, 28), 29), 29);
+  assert.equal(formDayOfMonth("yearly", false, D(2027, 4, 30), 31), 30);
+  assert.equal(formDayOfMonth("monthly", false, D(2027, 2, 28), 30), 30);
+});
+
+test("billsShowing: label tagihan tidak hilang saat tagihan baru menyusul", () => {
+  const data = (ids: number[]) => ({ available: true, bills: ids.map((id) => ({ id })) }) as unknown as Parameters<typeof billsShowing>[0];
+  assert.equal(billsShowing(data([7]), 7, true), true);
+  assert.equal(billsShowing(data([7, 8]), 7, true), true); // 7 sudah diumumkan dan masih menunggu
+  assert.equal(billsShowing(data([8]), 7, true), false); // hanya tagihan baru: tunggu Pak Pos mengantar
+  assert.equal(billsShowing(data([8]), null, true), false);
+  assert.equal(billsShowing(data([7]), 7, false), false); // Pak Pos belum tiba
+  assert.equal(billsShowing(data([]), 7, true), true);
 });

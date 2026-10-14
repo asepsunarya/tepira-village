@@ -306,7 +306,7 @@ async function closeTourFromImport(userId: string, tour: StoredTour) {
       (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'), (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'))
     ON CONFLICT ("userId", "key") DO UPDATE SET "value" = EXCLUDED."value", "updatedAt" = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
     WHERE COALESCE("VillageState"."value"->>'status', '') NOT IN ('done', 'skipped')
-      AND NOT ("VillageState"."value"->>'status' = 'active' AND "VillageState"."value"->'restarted' = 'true'::jsonb)`;
+      AND NOT COALESCE("VillageState"."value"->>'status' = 'active' AND "VillageState"."value"->'restarted' = 'true'::jsonb, false)`;
 }
 
 /**

@@ -129,12 +129,18 @@ export function rescheduledNextDue(
  * ke akhir bulan (28 Feb untuk patokan 30), patokannya dipertahankan; tanpa ini "tgl 30" diam-diam
  * tersimpan "tgl 28". Tanggal lain (atau tanpa patokan) = tanggal yang dipilih. 31 lewat endOfMonth.
  */
+/** Hari terbanyak tiap bulan (Februari 29 di tahun kabisat). */
+const MAX_DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 export function formDayOfMonth(frequency: Frequency, endOfMonth: boolean, pickedDay: number, anchor: number | null) {
   if (frequency === "weekly") return null;
   if (frequency === "monthly" && endOfMonth) return 31;
   const p = wibDateParts(pickedDay);
+  // Tahunan: patokan hanya kalau tanggal itu memang ada di bulan tersebut (29 Feb ya, 30 Feb tidak), supaya
+  // "Jadikan rutin" dari sewa tgl 30 yang dipindah ke "tiap tahun" di Februari tidak jadi "30 Feb".
+  const exists = frequency !== "yearly" || (anchor !== null && anchor <= MAX_DAYS_IN_MONTH[p.month - 1]);
   const fits =
-    anchor !== null && Number.isInteger(anchor) && anchor >= 1 && anchor < 31 &&
+    anchor !== null && Number.isInteger(anchor) && anchor >= 1 && anchor < 31 && exists &&
     anchoredDay(monthIndex(p.year, p.month), anchor) === pickedDay;
   return fits ? anchor : p.date;
 }
@@ -353,6 +359,17 @@ export function hasUnannouncedBills(data: Pick<RecurringData, "available" | "bil
 }
 
 /**
+ * Amplop & label "🧾 n tagihan" boleh tampil: Pak Pos sudah tiba, dan tidak ada tagihan baru yang belum
+ * diantar — kecuali tagihan yang sudah diumumkan masih menunggu (jangan sampai labelnya hilang beberapa
+ * detik hanya karena tagihan baru menyusul).
+ */
+export function billsShowing(data: Pick<RecurringData, "available" | "bills">, marker: number | null, arrived: boolean) {
+  if (!arrived) return false;
+  if (!hasUnannouncedBills(data, marker)) return true;
+  return marker !== null && data.bills.some((b) => b.id <= marker);
+}
+
+/**
  * Snapshot di tab dibuat sebelum hari WIB ini (atau waktunya tidak jelas)? syncRecurring lalu selalu
  * mengirim snapshot baru: tagihan & catatan otomatis hari ini bisa sudah dibuat cron atau perangkat lain,
  * jadi "panggilan ini tidak membuat apa-apa" bukan berarti tab itu sudah melihatnya. Waktu dari masa
@@ -503,7 +520,7 @@ export interface ParsedRecurring {
   keepSchedule: boolean;
 }
 
-const clean =(v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ");
+const clean = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ");
 const intOrNull = (v: unknown) => (v === null || v === undefined || v === "" ? null : Number(v));
 
 /** Validasi bentuk isian (tanpa database). Kepemilikan dompet/goal dicek server. */

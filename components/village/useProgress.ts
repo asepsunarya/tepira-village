@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DAY_MS, WIB_OFFSET_MS, computeStreak, levelFor, villageXp, wibDay } from "@/lib/game";
-import { billItems, hasUnannouncedBills, type BillContext, type BillItem } from "@/lib/recurring";
+import { billItems, billsShowing, type BillContext, type BillItem } from "@/lib/recurring";
 import { letterKey } from "./daily";
 import { useVillage } from "./store";
 
@@ -78,8 +78,8 @@ export function useBills(): BillItem[] {
 export function useMail() {
   const { unread } = useLetter();
   const bills = useVillage((s) => (s.snapshot?.recurring.available ? s.snapshot.recurring.bills.length : 0));
-  const delivered = useVillage(
-    (s) => s.mailDelivered && !(s.snapshot && hasUnannouncedBills(s.snapshot.recurring, s.mailSeen))
+  const delivered = useVillage((s) =>
+    s.snapshot ? billsShowing(s.snapshot.recurring, s.mailSeen, s.mailDelivered) : s.mailDelivered
   );
   return { unread, bills, delivered };
 }
