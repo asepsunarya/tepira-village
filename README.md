@@ -477,6 +477,7 @@ lib/
   *.test.ts               tes Node (node:test lewat tsx): `npm test`
   demo-snapshot.ts        desa contoh fiktif untuk landing (tidak pernah dikirim ke server)
   auth.ts, prisma.ts      sama polanya dengan tepira (JWT session, userOwnedWhere, connection_limit=1)
+  auth-policy.ts          siapa boleh login (allowlist env sama dengan tepira, aturan login dev), aman untuk Edge
 components/village/
   store.ts                zustand: snapshot dari server, data desa (base + outbox → tampilan), preferensi visual (localStorage)
   daily.ts                salinan data desa di browser: outbox op yang belum terkirim, versi server terakhir (untuk tab
@@ -546,13 +547,15 @@ tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
 | `AUTH_SECRET`                | Boleh berbeda dari tepira (cookie per domain). `openssl rand -base64 32`                    |
 | `AUTH_URL`                   | URL app ini, mis. `http://localhost:3000`                                                   |
 | `GOOGLE_CLIENT_ID/SECRET`    | Boleh pakai OAuth client yang sama dengan tepira; **tambahkan redirect URI** `<AUTH_URL>/api/auth/callback/google`. Nama `AUTH_GOOGLE_ID/SECRET` juga diterima. |
+| `TEPIRA_DEFAULT_USER_EMAIL`  | **Wajib untuk login**, isi sama dengan tepira: email Google owner. Hanya email ini (plus `TEPIRA_ALLOWED_EMAILS`) yang terverifikasi Google boleh masuk; keduanya kosong = tidak ada yang bisa login, sesi email lain langsung berakhir. Berlaku setelah redeploy. |
+| `TEPIRA_ALLOWED_EMAILS` (opsional) | Email Google lain yang boleh login, dipisah koma (huruf besar/kecil tidak berpengaruh), isi sama dengan tepira. |
 | `APP_PIN` (opsional)         | Sama seperti tepira: angka disembunyikan sampai PIN dimasukkan. Notifikasi pengingat jadi umum (tanpa jumlah). |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. Kutip/spasi pembungkus dibuang sama di browser & server (`lib/vapid-key.ts`). |
 | `VAPID_PRIVATE_KEY` (opsional) | Pasangan kunci privatnya (Sensitive). Dicek berpasangan; tidak cocok = pengingat dianggap belum diatur. |
 | `VAPID_SUBJECT` (opsional)   | `mailto:<kontak>` atau `https://<domain desa>`, bukan localhost.                            |
 | `CRON_SECRET`                | Rahasia cron (`/api/cron/postman`, `/api/cron/reminders`), acak & panjang (`openssl rand -hex 32`), Sensitive. Kosong = cron selalu 401, jadi Pak Pos & pengingat tidak jalan dari cron. Terpisah dari milik tepira. |
 | `PUSH_SEND_MODE` (dev/tes)   | `log` = notifikasi tidak dikirim, hanya dicatat (host + tag + judul) di log server.         |
-| `DEV_LOGIN_EMAIL` (dev saja) | Login tanpa Google di `npm run dev`. Diabaikan total saat `NODE_ENV=production`.           |
+| `DEV_LOGIN_EMAIL` (dev saja) | Login tanpa Google di `npm run dev` (tidak perlu masuk allowlist). Diabaikan total saat `NODE_ENV=production`. |
 
 ### Development lokal tanpa Supabase
 

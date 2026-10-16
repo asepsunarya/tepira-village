@@ -4,18 +4,20 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "@/auth.config";
+import { DEV_LOGIN_PROVIDER_ID, enabledDevLoginEmail } from "@/lib/auth-policy";
 
 /**
  * Login dev tanpa Google. HANYA aktif saat NODE_ENV !== "production" DAN
  * DEV_LOGIN_EMAIL diisi. Di production provider ini tidak pernah terdaftar.
+ * Callback signIn/jwt di auth.config.ts memakai penjaga yang sama, jadi email ini tidak perlu
+ * dimasukkan ke allowlist untuk `npm run dev`.
  */
-const devLoginEmail =
-  process.env.NODE_ENV !== "production" ? process.env.DEV_LOGIN_EMAIL?.trim() || null : null;
+const devLoginEmail = enabledDevLoginEmail(process.env.NODE_ENV, process.env.DEV_LOGIN_EMAIL);
 
 const devProvider = devLoginEmail
   ? [
       Credentials({
-        id: "dev-login",
+        id: DEV_LOGIN_PROVIDER_ID,
         name: "Dev login",
         credentials: {},
         async authorize() {
@@ -37,11 +39,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [...authConfig.providers, ...devProvider],
   adapter: PrismaAdapter(prisma),
   callbacks: {
+    // signIn + jwt (allowlist) dari auth.config.ts; jangan timpa jwt di sini, nanti cek ulangnya hilang.
     ...authConfig.callbacks,
-    jwt({ token, user }) {
-      if (user?.id) token.sub = user.id;
-      return token;
-    },
     session({ session, token }) {
       if (session.user && token.sub) session.user.id = token.sub;
       return session;
