@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, isDevLoginEnabled, signIn } from "@/lib/auth";
+import { DEV_LOGIN_PROVIDER_ID } from "@/lib/auth-policy";
 import Brand from "@/components/landing/Brand";
 import "../landing.css";
 
@@ -15,7 +16,8 @@ const ERROR_TEXT: Record<string, string> = {
   OAuthSignInError: "Login Google belum bisa dimulai. Coba lagi sebentar lagi.",
   OAuthAccountNotLinked: "Email ini sudah terhubung dengan cara login lain. Masuk dengan akun yang sama seperti di tepira.id.",
   MissingCSRF: "Sesi login kedaluwarsa. Muat ulang halaman ini, lalu coba lagi.",
-  AccessDenied: "Akses ditolak untuk akun ini."
+  // signIn di auth.config.ts menolak akun di luar allowlist (TEPIRA_DEFAULT_USER_EMAIL/TEPIRA_ALLOWED_EMAILS).
+  AccessDenied: "Akun ini tidak diizinkan masuk."
 };
 
 /** callbackUrl dari middleware berupa URL absolut: ambil path-nya saja dan hanya untuk /village. */
@@ -87,7 +89,7 @@ export default async function LoginPage({ searchParams }: Props) {
             <form
               action={async () => {
                 "use server";
-                await signIn("dev-login", { redirectTo });
+                await signIn(DEV_LOGIN_PROVIDER_ID, { redirectTo });
               }}
             >
               <button type="submit" className="pill dev lp-dev">🛠️ Dev login (tanpa Google)</button>
