@@ -31,6 +31,35 @@ test("parseAllowedEmails: entri yang bukan alamat email diabaikan", () => {
   assert.deepEqual([...allowed], ["ok@example.test"]);
 });
 
+test("parseAllowedEmails: tanda kutip pembungkus dari dashboard Vercel / .env dibuang", () => {
+  // Nilai dengan kutip ("owner@...") dulu lolos regex apa adanya, jadi owner sendiri ditolak (AccessDenied).
+  const owner = parseAllowedEmails('"Owner@Example.test"');
+  assert.deepEqual([...owner], ["owner@example.test"]);
+  assert.equal(isAllowedEmail("owner@example.test", owner), true);
+
+  assert.deepEqual([...parseAllowedEmails(" 'owner@example.test' ")], ["owner@example.test"]);
+  // Kutip di seluruh daftar maupun per entri.
+  assert.deepEqual(
+    [...parseAllowedEmails(undefined, '"a@example.test, b@example.test"')].sort(),
+    ["a@example.test", "b@example.test"]
+  );
+  assert.deepEqual(
+    [...parseAllowedEmails(undefined, '"a@example.test", \'b@example.test\'')].sort(),
+    ["a@example.test", "b@example.test"]
+  );
+  assert.deepEqual(
+    [...parseAllowedEmails(undefined, '"a@example.test","b@example.test"')].sort(),
+    ["a@example.test", "b@example.test"]
+  );
+  assert.deepEqual([...parseAllowedEmails("\"o'brien@example.test\"")], ["o'brien@example.test"]);
+  // Hanya sepasang kutip yang cocok yang dibuang (sama dengan envValue di lib/vapid-key.ts).
+  assert.equal(isAllowedEmail("owner@example.test", parseAllowedEmails('"owner@example.test')), false);
+  assert.equal(isAllowedEmail("owner@example.test", parseAllowedEmails('"owner@example.test\'')), false);
+  assert.equal(parseAllowedEmails('""', "''").size, 0);
+  // Apostrof di tengah alamat (boleh di Google Workspace) tidak disentuh.
+  assert.deepEqual([...parseAllowedEmails("o'brien@example.test")], ["o'brien@example.test"]);
+});
+
 test("isAllowedEmail: tidak peduli huruf besar/kecil, selain itu gagal tertutup", () => {
   const allowed = parseAllowedEmails("owner@example.test", "friend@example.test");
   assert.equal(isAllowedEmail("owner@example.test", allowed), true);

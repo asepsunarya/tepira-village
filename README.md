@@ -518,7 +518,7 @@ jatuh tempo diproses di server sebelum snapshot dibangun (render halaman, ganti 
 
 ```bash
 npm install
-cp .env.example .env     # isi DATABASE_URL (sama dengan tepira), AUTH_SECRET, GOOGLE_CLIENT_ID/SECRET
+cp .env.example .env     # isi DATABASE_URL (sama dengan tepira), AUTH_SECRET, GOOGLE_CLIENT_ID/SECRET, TEPIRA_DEFAULT_USER_EMAIL
 npm run dev              # http://localhost:3000
 ```
 
@@ -547,7 +547,7 @@ tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
 | `AUTH_SECRET`                | Boleh berbeda dari tepira (cookie per domain). `openssl rand -base64 32`                    |
 | `AUTH_URL`                   | URL app ini, mis. `http://localhost:3000`                                                   |
 | `GOOGLE_CLIENT_ID/SECRET`    | Boleh pakai OAuth client yang sama dengan tepira; **tambahkan redirect URI** `<AUTH_URL>/api/auth/callback/google`. Nama `AUTH_GOOGLE_ID/SECRET` juga diterima. |
-| `TEPIRA_DEFAULT_USER_EMAIL`  | **Wajib untuk login**, isi sama dengan tepira: email Google owner. Hanya email ini (plus `TEPIRA_ALLOWED_EMAILS`) yang terverifikasi Google boleh masuk; keduanya kosong = tidak ada yang bisa login, sesi email lain langsung berakhir. Berlaku setelah redeploy. |
+| `TEPIRA_DEFAULT_USER_EMAIL`  | **Wajib untuk login**, isi sama dengan tepira: email Google owner. Hanya email ini (plus `TEPIRA_ALLOWED_EMAILS`) yang terverifikasi Google boleh masuk; keduanya kosong = tidak ada yang bisa login lewat Google, sesi email lain langsung berakhir. Isi email polos; kutip pembungkus dibuang. Berlaku setelah redeploy. |
 | `TEPIRA_ALLOWED_EMAILS` (opsional) | Email Google lain yang boleh login, dipisah koma (huruf besar/kecil tidak berpengaruh), isi sama dengan tepira. |
 | `APP_PIN` (opsional)         | Sama seperti tepira: angka disembunyikan sampai PIN dimasukkan. Notifikasi pengingat jadi umum (tanpa jumlah). |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. Kutip/spasi pembungkus dibuang sama di browser & server (`lib/vapid-key.ts`). |
@@ -584,7 +584,7 @@ jalan di deployment Production); isi `CRON_SECRET` dan kunci VAPID dulu, lihat [
 
 Supaya env tidak perlu disalin ulang antar project, pakai **Shared Environment Variables**: di halaman
 Environment Variables buka tab **Shared**, masukkan nilainya sekali (mis. `DATABASE_URL`, `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`), lalu tautkan ke project `tepira` dan `tepira-village`. Kedua project akan memakai
+`GOOGLE_CLIENT_SECRET`, `TEPIRA_DEFAULT_USER_EMAIL`, `TEPIRA_ALLOWED_EMAILS`), lalu tautkan ke project `tepira` dan `tepira-village`. Kedua project akan memakai
 nilai yang sama. Env yang memang harus berbeda (`AUTH_URL`, opsional `AUTH_SECRET`) tetap diset per project.
 Opsional: `NEXT_PUBLIC_SITE_URL` (mis. `https://desa.contoh.id`) untuk URL absolut gambar pratinjau link (og:image);
 tanpa itu dipakai domain produksi Vercel.

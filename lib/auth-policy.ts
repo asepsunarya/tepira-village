@@ -10,15 +10,26 @@
 export const DEV_LOGIN_PROVIDER_ID = "dev-login";
 
 /**
+ * Spasi dan sepasang tanda kutip pembungkus ("…" atau '…') dibuang, seperti envValue di lib/vapid-key.ts:
+ * nilai yang ditempel ke dashboard Vercel lengkap dengan kutip dari .env tidak boleh mengunci owner.
+ * Hanya kalau kutip yang sama tidak muncul di dalamnya, supaya "a@x","b@x" dibuang per entri, bukan
+ * menjadi a@x","b@x.
+ */
+function unquote(value: string): string {
+  return value.trim().replace(/^"([^"]*)"$|^'([^']*)'$/, "$1$2").trim();
+}
+
+/**
  * Allowlist login dari env: email owner (TEPIRA_DEFAULT_USER_EMAIL) plus daftar opsional dipisah koma
- * (TEPIRA_ALLOWED_EMAILS). Tiap entri di-trim dan di-lowercase. Kalau tidak ada yang diisi, hasilnya
- * set kosong, dan set kosong tidak meloloskan siapa pun.
+ * (TEPIRA_ALLOWED_EMAILS). Kutip pembungkus dibuang (seluruh nilai dan tiap entri), lalu tiap entri
+ * di-trim dan di-lowercase. Kalau tidak ada yang diisi, hasilnya set kosong, dan set kosong tidak
+ * meloloskan siapa pun.
  */
 export function parseAllowedEmails(...values: Array<string | null | undefined>): Set<string> {
   const allowed = new Set<string>();
   for (const value of values) {
-    for (const entry of (value ?? "").split(",")) {
-      const email = entry.trim().toLowerCase();
+    for (const entry of unquote(value ?? "").split(",")) {
+      const email = unquote(entry).toLowerCase();
       if (/^[^\s@]+@[^\s@]+$/.test(email)) allowed.add(email);
     }
   }
