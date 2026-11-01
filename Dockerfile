@@ -5,9 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
-# package-lock.json is currently out of sync with package.json, so `npm ci` fails.
-# Switch to `npm ci` once the lockfile is regenerated and committed (same note as ci.yml).
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1 DATABASE_URL=postgresql://build:build@localhost:5432/build
 RUN npm run build && npm prune --omit=dev

@@ -26,9 +26,7 @@ jobs:
         with:
           node-version: 24
       - name: Install
-        # package-lock.json is currently out of sync with package.json, so `npm ci` fails.
-        # Switch to `npm ci` once the lockfile is regenerated and committed.
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Prisma generate
         run: npx prisma generate
       - name: Tests
