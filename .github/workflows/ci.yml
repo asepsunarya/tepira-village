@@ -29,6 +29,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Prisma generate
         run: npx prisma generate
+      - name: Lint
+        run: npm run lint
       - name: Tests
         run: npm test
       - name: Build
