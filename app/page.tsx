@@ -159,7 +159,7 @@ function salaryGroups() {
   const groupOf = new Map<string, string>(expenseCategories.map((c) => [c.label, c.group]));
   const totals = new Map<string, number>();
   for (const a of DEMO_SALARY.allocations) {
-    const group = groupOf.get(a.category) ?? "Lainnya";
+    const group = groupOf.get(a.category) ?? "Kategori lain";
     totals.set(group, (totals.get(group) ?? 0) + a.amount);
   }
   totals.set("Tabungan", DEMO_SALARY.savingsAllocation);

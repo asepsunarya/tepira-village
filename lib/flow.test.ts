@@ -69,6 +69,10 @@ test("aliran: kategori lama (key), kosong, dan asing dinormalkan seperti panel G
         spend(3_000, "  "),
         spend(54_900, "Langganan (Spotify, Netflix, dll)"),
         spend(7_000, "Hobi"),
+        spend(1_000, "Uncategorized"), // OpenClaw
+        spend(500, "Tanpa kategori"),
+        spend(12_000, "Lainnya"), // kategori sungguhan, terpisah dari "tanpa kategori"
+        spend(6_500, "biaya_admin"),
         spend(-500, "Transport"), // baris aneh dari tepira diabaikan
         spend(0, "Transport")
       ],
@@ -79,13 +83,17 @@ test("aliran: kategori lama (key), kosong, dan asing dinormalkan seperti panel G
   assert.equal(byKey.get("cat:Makan harian")?.amount, 30_000);
   assert.equal(byKey.get("cat:Makan harian")?.count, 2);
   assert.equal(byKey.get("cat:Makan harian")?.budget, 25_000);
-  assert.equal(byKey.get("cat:Lainnya")?.amount, 8_000);
-  assert.equal(byKey.get("cat:Lainnya")?.icon, "🧾");
+  assert.equal(byKey.get("cat:Tanpa kategori")?.amount, 9_500);
+  assert.equal(byKey.get("cat:Tanpa kategori")?.icon, "🧾");
+  assert.equal(byKey.get("cat:Lainnya")?.amount, 12_000);
+  assert.equal(byKey.get("cat:Lainnya")?.icon, "🧺");
+  assert.equal(byKey.get("cat:Biaya admin & bank")?.amount, 6_500);
+  assert.equal(byKey.get("cat:Biaya admin & bank")?.icon, "🏦");
   assert.equal(byKey.get("cat:Langganan (Spotify, Netflix, dll)")?.label, "Langganan");
   assert.equal(byKey.get("cat:Langganan (Spotify, Netflix, dll)")?.icon, "🎧");
   assert.equal(byKey.get("cat:Hobi")?.label, "Hobi");
   assert.ok(!byKey.has("cat:Transport"));
-  assert.equal(f.spent, 30_000 + 8_000 + 54_900 + 7_000);
+  assert.equal(f.spent, 30_000 + 9_500 + 54_900 + 7_000 + 12_000 + 6_500);
 });
 
 test("aliran: meluap hanya dihitung dari bagian bersumber gaji", () => {

@@ -220,12 +220,19 @@ const STRONG: Record<ExpenseCategoryKey, string[]> = {
     "camilan", "martabak", "seblak", "cilok", "cireng", "gorengan", "batagor", "siomay", "es krim", "ice cream", "donat",
     "dessert", "nonton", "bioskop", "xxi", "cgv", "karaoke", "top up game", "topup game"
   ],
+  // Biaya admin / transfer / bank. ("transfer" sendiri menunjuk dompet bank, lihat TYPE_ALIASES.)
+  biaya_admin: [
+    "biaya admin", "biaya adm", "admin bank", "adm bank", "biaya bank", "potongan admin", "biaya layanan", "materai",
+    "meterai", "bi-fast", "bifast", "fee"
+  ],
   belanja_kecil: [
     "sabun", "sampo", "shampo", "shampoo", "odol", "pasta gigi", "sikat gigi", "deterjen", "detergen", "rinso", "pewangi",
     "tisu", "tissue", "skincare", "sunscreen", "kosmetik", "makeup", "parfum", "baju", "kaos", "celana", "sepatu",
     "sandal", "kaus kaki", "charger", "kabel", "alat tulis", "pulpen", "buku", "laundry", "potong rambut", "cukur",
     "barbershop"
-  ]
+  ],
+  // Tidak pernah ditebak dari teks: "Lainnya" hanya dipilih sendiri.
+  lainnya: []
 };
 
 /** Kata yang lebih samar: hanya menang kalau tidak ada kata kunci yang lebih jelas. */
@@ -233,6 +240,7 @@ const WEAK: Partial<Record<ExpenseCategoryKey, string[]>> = {
   makan_harian: ["pasar"],
   listrik_kos: ["air"],
   sosial: ["ibu", "bapak", "kas"],
+  biaya_admin: ["admin", "adm"],
   belanja_kecil: ["belanja", "indomaret", "alfamart", "alfamidi", "minimarket", "shopee", "tokopedia", "tokped", "lazada", "blibli"]
 };
 

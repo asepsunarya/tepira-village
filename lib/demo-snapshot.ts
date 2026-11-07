@@ -1,4 +1,4 @@
-import { SALARY_TEMPLATE_75, expenseCategories, getCategoryLabel, type ExpenseCategoryKey } from "@/lib/categories";
+import { SALARY_TEMPLATE_75, displayCategoryLabel, expenseCategories, getCategoryLabel, type ExpenseCategoryKey } from "@/lib/categories";
 import {
   healthStatusFor,
   wibDay,
@@ -151,7 +151,7 @@ function withDerived(base: Omit<Snapshot, "summary" | "totals">, period: { month
 
   const byCategory: Record<string, number> = {};
   for (const e of base.expenses) {
-    const key = e.category || "Lainnya";
+    const key = displayCategoryLabel(e.category);
     byCategory[key] = (byCategory[key] || 0) + e.amount;
   }
 

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { userOwnedWhere, isDevLoginEnabled } from "@/lib/auth";
 import { ACTIVITY_WINDOW_DAYS, DAY_MS, healthStatusFor, wibDay, type SalaryView, type Snapshot } from "@/lib/game";
 import { knownPlacesFrom, normalizePlaceName } from "@/lib/places";
+import { displayCategoryLabel } from "@/lib/categories";
 import { wibDateParts } from "@/lib/season";
 import { loadVillageSync } from "@/lib/village-state";
 import { autoPostedLinks, loadRecurring, recurringLinks } from "@/lib/recurring-server";
@@ -203,7 +204,7 @@ export async function buildSnapshot(userId: string, month: number, year: number)
 
   const byCategory: Record<string, number> = {};
   for (const e of expenses) {
-    const key = e.category || "Lainnya";
+    const key = displayCategoryLabel(e.category);
     byCategory[key] = (byCategory[key] || 0) + e.amount;
   }
 

@@ -1,4 +1,4 @@
-import { expenseCategories, type ExpenseCategoryKey } from "@/lib/categories";
+import { displayCategoryLabel, expenseCategories, type ExpenseCategoryKey } from "@/lib/categories";
 import { wibDay, type ExpenseView, type KnownPlace } from "@/lib/game";
 
 /** Aturan "peta jajan" yang dipakai bersama server, panel peta, dan catat cepat. */
@@ -100,7 +100,7 @@ export function spendingByPlace(expenses: readonly ExpenseView[]): PlaceSpend[] 
     g.total += e.amount;
     g.count++;
     g.days.add(wibDay(e.date));
-    const category = e.category || "Lainnya";
+    const category = displayCategoryLabel(e.category);
     g.byCategory.set(category, (g.byCategory.get(category) ?? 0) + e.amount);
     if (e.date > g.latest) {
       g.latest = e.date;
@@ -158,7 +158,7 @@ export function spendByPlaceName(expenses: readonly ExpenseView[]): Map<string, 
     g.total += e.amount;
     g.count++;
     g.days.add(wibDay(e.date));
-    const category = e.category || "Lainnya";
+    const category = displayCategoryLabel(e.category);
     g.byCategory.set(category, (g.byCategory.get(category) ?? 0) + e.amount);
     if (e.date > g.latest) {
       g.latest = e.date;
@@ -188,8 +188,10 @@ const CATEGORY_COLORS: Record<ExpenseCategoryKey, string> = {
   langganan: "#f28cb4",
   kesehatan: "#2fb57d",
   sosial: "#ff7e9e",
+  biaya_admin: "#7d8fb3",
   nongkrong: "#a97a52",
-  belanja_kecil: "#6cc8ad"
+  belanja_kecil: "#6cc8ad",
+  lainnya: "#c9a27e"
 };
 
 export function categoryColor(label: string | null) {
@@ -206,8 +208,10 @@ const CATEGORY_ICONS: Record<ExpenseCategoryKey, string> = {
   langganan: "🎧",
   kesehatan: "💊",
   sosial: "🤝",
+  biaya_admin: "🏦",
   nongkrong: "☕",
-  belanja_kecil: "🛍️"
+  belanja_kecil: "🛍️",
+  lainnya: "🧺"
 };
 
 export function categoryIcon(label: string | null) {
@@ -262,7 +266,7 @@ export function jajanSummary(
     } else {
       unplaced.count++;
       unplaced.total += e.amount;
-      const c = shortCategory(e.category || "Lainnya");
+      const c = shortCategory(displayCategoryLabel(e.category));
       unplacedByCategory.set(c, (unplacedByCategory.get(c) ?? 0) + e.amount);
     }
   }
@@ -270,7 +274,7 @@ export function jajanSummary(
 
   const byCategory = new Map<string, Set<string>>();
   for (const e of located) {
-    const c = e.category || "Lainnya";
+    const c = displayCategoryLabel(e.category);
     if (!byCategory.has(c)) byCategory.set(c, new Set());
     byCategory.get(c)!.add(placeKey(e, e.latitude!, e.longitude!));
   }
@@ -278,7 +282,7 @@ export function jajanSummary(
     .map(([label, keys]) => ({ label, places: keys.size }))
     .sort((a, b) => b.places - a.places || a.label.localeCompare(b.label));
 
-  const filtered = category ? located.filter((e) => (e.category || "Lainnya") === category) : located;
+  const filtered = category ? located.filter((e) => displayCategoryLabel(e.category) === category) : located;
   const spots = spendingByPlace(filtered);
   const seen = new Set(placesBefore);
   return {

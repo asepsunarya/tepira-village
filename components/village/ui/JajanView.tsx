@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
-import { expenseCategories } from "@/lib/categories";
+import { expenseCategories, UNCATEGORIZED_LABEL } from "@/lib/categories";
 import { formatCompact, monthLabel, periodWord as periodWordFor } from "@/lib/format";
 import { LIMIT_COLOR, LIMIT_EMOJI, LIMIT_WORD } from "@/lib/place-limits";
 import {
@@ -195,7 +195,7 @@ export default function JajanView({ onClose }: { onClose: () => void }) {
     (selectedMonth?.name ?? selectedSpot?.name ?? selectedKnown?.name ?? placeLimits[selectedNorm]?.name ?? null);
   const selectedLimit = selected ? limitViews.get(selected) : undefined;
   const selectedCategory = selectedMonth?.topCategory ?? selectedSpot?.topCategory ?? null;
-  const detail = (s: PlaceSpend) => `${s.count} catatan · ${s.topCategory ? shortCategory(s.topCategory) : "Lainnya"}`;
+  const detail = (s: PlaceSpend) => `${s.count} catatan · ${s.topCategory ? shortCategory(s.topCategory) : UNCATEGORIZED_LABEL}`;
 
   return (
     <div className={`jajan-view theme-${theme}`}>

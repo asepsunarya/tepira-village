@@ -94,7 +94,10 @@ test("helper kecil", () => {
   assert.equal(titleCase("warung bu imas"), "Warung Bu Imas");
   assert.equal(roundCoord(-6.893456789), -6.89346);
   assert.equal(categoryColor("Transport"), "#5b9ae0");
-  assert.equal(categoryColor("Lainnya"), "#9a8aa0");
+  assert.equal(categoryColor("Tanpa kategori"), "#9a8aa0");
+  assert.equal(categoryColor("Lainnya"), "#c9a27e");
+  assert.equal(categoryIcon("Biaya admin & bank"), "🏦");
+  assert.equal(categoryIcon("Lainnya"), "🧺");
   assert.equal(categoryIcon("Nongkrong / jajan"), "☕");
   assert.equal(categoryIcon(null), "📍");
   assert.equal(shortCategory("Langganan (Spotify, Netflix, dll)"), "Langganan");

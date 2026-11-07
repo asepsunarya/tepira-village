@@ -125,6 +125,17 @@ test("kategori: frasa panjang menang atas kata pendek", () => {
   assert.equal(parse("xyz 10rb").categoryKey, null);
 });
 
+test("kategori: biaya admin & bank; Lainnya tidak pernah ditebak", () => {
+  assert.equal(parse("biaya admin 6500").categoryKey, "biaya_admin");
+  assert.equal(parse("admin bank 2.5rb bca").categoryKey, "biaya_admin");
+  assert.equal(parse("materai 10rb").categoryKey, "biaya_admin");
+  assert.equal(parse("adm 6500").categoryKey, "biaya_admin");
+  // "transfer" menunjuk dompet bank, bukan kategori.
+  assert.equal(parse("transfer ortu 500rb").categoryKey, "sosial");
+  assert.equal(parse("lainnya 10rb").categoryKey, null);
+  assert.equal(parse("lain-lain 10rb").categoryKey, null);
+});
+
 test("sumber bonus dan pembersihan catatan", () => {
   const p = parse("kado dari bonus 200rb");
   assert.equal(p.source, "bonus");
