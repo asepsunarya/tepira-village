@@ -424,6 +424,13 @@ user) ikut migrasi tepira yang sama (`20261014090000_add_village_sync_recurring_
 2. Di project Vercel `tepira-village` (Production) isi `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` (Sensitive), `VAPID_SUBJECT`
    (`mailto:…` atau `https://domain-desa`, bukan localhost), dan `CRON_SECRET` (mis. `openssl rand -hex 32`, Sensitive) **sebelum**
    deploy: kunci publik ikut di-build ke browser. Mengganti kunci = deploy ulang; perangkat berlangganan ulang sendiri saat desa dibuka.
+   **Image GHCR (deploy VM):** kunci publik dimasukkan ke image saat build oleh workflow *Image* dari **variabel Actions
+   tingkat repository** `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (Settings → Secrets and variables → Actions → tab *Variables*), bukan
+   variabel environment. Nilainya harus **sama persis** dengan `NEXT_PUBLIC_VAPID_PUBLIC_KEY` di runtime VM; runtime VM tetap
+   memerlukan `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, dan `VAPID_SUBJECT`. Jika berbeda, pengiriman push gagal
+   (401/403) dan langganan yang terdampak dihapus. Mengganti kunci memerlukan build ulang image (jalankan workflow *Image* lewat
+   *Run workflow* / `workflow_dispatch`, atau merge baru ke `main`). Jika variabel tidak diisi, build tetap berhasil dan bagian 🔔
+   menampilkan "belum diatur".
 3. Setelah deploy, cek Settings → Cron Jobs (dua jadwal), nyalakan pengingat di HP, lalu *Kirim tes*.
 4. Dari terminalmu: `curl -H "Authorization: Bearer $CRON_SECRET" "https://<domain>/api/cron/reminders?dryRun=1"`.
 
@@ -547,7 +554,7 @@ tapi CLI Prisma (`db:push:dev`) hanya membaca `.env`.
 | `AUTH_URL`                   | URL app ini, mis. `http://localhost:3000`                                                   |
 | `GOOGLE_CLIENT_ID/SECRET`    | Boleh pakai OAuth client yang sama dengan tepira; **tambahkan redirect URI** `<AUTH_URL>/api/auth/callback/google`. Nama `AUTH_GOOGLE_ID/SECRET` juga diterima. |
 | `APP_PIN` (opsional)         | Sama seperti tepira: angka disembunyikan sampai PIN dimasukkan. Notifikasi pengingat jadi umum (tanpa jumlah). |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. Kutip/spasi pembungkus dibuang sama di browser & server (`lib/vapid-key.ts`). |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (opsional) | Kunci publik VAPID untuk 🔔 pengingat. Di-build ke browser: harus ada **sebelum** deploy, mengganti = deploy ulang. Kutip/spasi pembungkus dibuang sama di browser & server (`lib/vapid-key.ts`). Image GHCR (VM): isi juga variabel Actions repository dengan nama sama, nilainya identik, lihat [Pengingat](#pengingat-web-push). |
 | `VAPID_PRIVATE_KEY` (opsional) | Pasangan kunci privatnya (Sensitive). Dicek berpasangan; tidak cocok = pengingat dianggap belum diatur. |
 | `VAPID_SUBJECT` (opsional)   | `mailto:<kontak>` atau `https://<domain desa>`, bukan localhost.                            |
 | `CRON_SECRET`                | Rahasia cron (`/api/cron/postman`, `/api/cron/reminders`), acak & panjang (`openssl rand -hex 32`), Sensitive. Kosong = cron selalu 401, jadi Pak Pos & pengingat tidak jalan dari cron. Terpisah dari milik tepira. |
