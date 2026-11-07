@@ -1,5 +1,12 @@
-// Shared categories untuk budget dan expenses
-// Harus sama persis dengan kategori di BudgetForm
+// Shared categories untuk budget dan expenses.
+// Salinan dari tepira lib/categories.ts (key, label, grup, urutan sama); ubah
+// bersamaan dengan tepira dan tepira-mobile (lib/core/categories.dart).
+// lib/categories.test.ts mengecek salinan ini.
+//
+// biaya_admin masuk "Kewajiban & rutin"; lainnya masuk "Hiburan & fleksibel"
+// (pengeluaran sekali-sekali itu fleksibel), jadi grupnya tetap tiga.
+// "Lainnya" adalah kategori yang dipilih, BUKAN "tanpa kategori": untuk itu
+// pakai UNCATEGORIZED_LABEL / displayCategoryLabel di bawah.
 
 export const expenseCategories = [
   // 1️⃣ Kebutuhan Wajib
@@ -22,14 +29,16 @@ export const expenseCategories = [
     group: "Kewajiban & rutin"
   },
   { key: "kesehatan", label: "Kesehatan / Obat", group: "Kewajiban & rutin" },
-  { 
-    key: "sosial", 
-    label: "Sosial (sedekah / bantu keluarga)", 
-    group: "Kewajiban & rutin" 
+  {
+    key: "sosial",
+    label: "Sosial (sedekah / bantu keluarga)",
+    group: "Kewajiban & rutin"
   },
+  { key: "biaya_admin", label: "Biaya admin & bank", group: "Kewajiban & rutin" },
   // 4️⃣ Hiburan & Fleksibel
   { key: "nongkrong", label: "Nongkrong / jajan", group: "Hiburan & fleksibel" },
-  { key: "belanja_kecil", label: "Belanja kecil", group: "Hiburan & fleksibel" }
+  { key: "belanja_kecil", label: "Belanja kecil", group: "Hiburan & fleksibel" },
+  { key: "lainnya", label: "Lainnya", group: "Hiburan & fleksibel" }
 ] as const;
 
 export type ExpenseCategoryKey = (typeof expenseCategories)[number]["key"];
@@ -58,6 +67,23 @@ export function getCategoriesByGroup() {
 }
 
 
+// "Tanpa kategori" tersimpan dalam beberapa bentuk: null, "" (form web),
+// "Uncategorized" (OpenClaw) dan "Tanpa kategori". Data tidak diubah; semua
+// bentuk itu disatukan saat ditampilkan (sama seperti tepira lib/categories.ts).
+export const UNCATEGORIZED_LABEL = "Tanpa kategori";
+
+export function isUncategorized(raw: string | null | undefined): boolean {
+  if (raw == null) return true;
+  const v = raw.trim().toLowerCase();
+  return v === "" || v === "uncategorized" || v === "tanpa kategori";
+}
+
+/** Label untuk ditampilkan: key lama → label, semua bentuk "tanpa kategori" → UNCATEGORIZED_LABEL, sisanya apa adanya (dirapikan). */
+export function displayCategoryLabel(raw: string | null | undefined): string {
+  if (raw == null || isUncategorized(raw)) return UNCATEGORIZED_LABEL;
+  return getCategoryLabel(raw.trim());
+}
+
 /** Label kategori yang dikenal (dipakai untuk menyimpan alokasi gaji, sama seperti tepira). */
 export const KNOWN_CATEGORY_LABELS: ReadonlySet<string> = new Set(expenseCategories.map((c) => c.label));
 
@@ -75,8 +101,10 @@ export const SALARY_TEMPLATE_75 = {
     langganan: 200_000,
     kesehatan: 200_000,
     sosial: 300_000,
+    biaya_admin: 0,
     nongkrong: 250_000,
-    belanja_kecil: 100_000
+    belanja_kecil: 100_000,
+    lainnya: 0
   } satisfies Record<ExpenseCategoryKey, number>,
   savings: 2_500_000 + 500_000
 };

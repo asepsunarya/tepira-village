@@ -1,4 +1,4 @@
-import { expenseCategories, getCategoryLabel } from "@/lib/categories";
+import { displayCategoryLabel, expenseCategories } from "@/lib/categories";
 import type { ExpenseView, GoalView, MonthSummary, SalaryView } from "@/lib/game";
 import { categoryColor, categoryIcon, shortCategory } from "@/lib/places";
 
@@ -73,8 +73,12 @@ export const MAX_GOAL_STREAMS = 5;
 
 /** Nominal dari baris lama tepira bisa saja aneh; yang tidak positif diabaikan. */
 const pos = (n: number) => (Number.isFinite(n) && n > 0 ? Math.round(n) : 0);
-/** Label kategori seperti panel Gaji: key lama ("makan_harian") diterjemahkan, kosong = "Lainnya". */
-const labelOf = (category: string | null) => (category?.trim() ? getCategoryLabel(category.trim()) : "") || "Lainnya";
+/**
+ * Label kategori seperti panel Gaji: key lama ("makan_harian") diterjemahkan, semua bentuk
+ * "tanpa kategori" (null, "", "Uncategorized") jadi "Tanpa kategori" — bukan "Lainnya", yang
+ * sekarang kategori sungguhan.
+ */
+const labelOf = (category: string | null) => displayCategoryLabel(category);
 
 export function buildMoneyFlow({ summary, expenses, goals, salary, goalColor }: FlowInput): MoneyFlow {
   const known = new Set<string>(expenseCategories.map((c) => c.label));

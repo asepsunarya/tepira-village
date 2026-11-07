@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import type { ExpenseView, SalaryView, Snapshot } from "@/lib/game";
-import { KNOWN_CATEGORY_LABELS, SALARY_TEMPLATE_75, expenseCategories, getCategoryLabel } from "@/lib/categories";
+import { KNOWN_CATEGORY_LABELS, SALARY_TEMPLATE_75, displayCategoryLabel, expenseCategories, getCategoryLabel } from "@/lib/categories";
 import { monthLabel } from "@/lib/format";
 import { useMoneyVisible, useVillage } from "../store";
 import { Money } from "./Money";
@@ -40,7 +40,7 @@ const usageColor = (ratio: number) => (ratio > 1 ? "#e86d6d" : ratio >= 0.8 ? "#
 export function salaryUsage(salary: SalaryView, expenses: ExpenseView[]) {
   const allocated = new Map<string, number>();
   for (const a of salary.allocations) {
-    const label = getCategoryLabel(a.category.trim()) || "Lainnya";
+    const label = displayCategoryLabel(a.category);
     allocated.set(label, (allocated.get(label) ?? 0) + a.amount);
   }
   const spent = new Map<string, number>();
@@ -50,7 +50,7 @@ export function salaryUsage(salary: SalaryView, expenses: ExpenseView[]) {
       bonusSpent += e.amount;
       continue;
     }
-    const label = e.category ? getCategoryLabel(e.category) : "Lainnya";
+    const label = displayCategoryLabel(e.category);
     spent.set(label, (spent.get(label) ?? 0) + e.amount);
   }
   return { allocated, spent, bonusSpent };
@@ -61,7 +61,7 @@ interface Draft {
   savings: number;
   /** nominal per label kategori */
   values: Record<string, number>;
-  /** kategori di luar sembilan kategori tepira (data lama), tetap ditampilkan supaya tidak hilang */
+  /** kategori di luar daftar kategori tepira (data lama), tetap ditampilkan supaya tidak hilang */
   extras: string[];
 }
 
@@ -69,7 +69,7 @@ function draftFrom(salary: SalaryView | null): Draft {
   const values: Record<string, number> = {};
   const extras: string[] = [];
   for (const a of salary?.allocations ?? []) {
-    const label = getCategoryLabel(a.category.trim()) || "Lainnya";
+    const label = displayCategoryLabel(a.category);
     values[label] = (values[label] ?? 0) + a.amount;
     if (!KNOWN_CATEGORY_LABELS.has(label) && !extras.includes(label)) extras.push(label);
   }
