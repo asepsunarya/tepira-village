@@ -76,6 +76,7 @@ jobs:
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
           build-args: |
             GIT_SHA=${{ steps.rev.outputs.sha }}
+            NEXT_PUBLIC_VAPID_PUBLIC_KEY=${{ vars.NEXT_PUBLIC_VAPID_PUBLIC_KEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false

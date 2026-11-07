@@ -8,6 +8,9 @@ COPY prisma ./prisma
 RUN npm ci --no-audit --no-fund
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1 DATABASE_URL=postgresql://build:build@localhost:5432/build
+# Public (browser-inlined) VAPID key; Next.js inlines NEXT_PUBLIC_* at build time. Build stage only.
+ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=""
+ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-bookworm-slim
